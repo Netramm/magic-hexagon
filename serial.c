@@ -64,7 +64,7 @@ void get_coordinates_of_row(int (*coord_arr)[3], int diagonal, int row, int n){
     }
 }
 
-bool validateBoard(int r, int (*board)[r][r], int M, int n){
+bool validate_board(int r, int (*board)[r][r], int M, int n){
     /* This function checks for each row in each diagonal if they sum up to M.
     */
     int i, j, k;
@@ -145,6 +145,48 @@ void print_board(int r, int n, int (*b)[r][r]){
     printf("\n");
 }
 
+bool solver_depth_first(int r, int n, int N, int M, int (*board)[r][r], bool *value_used){
+    int i, j, k, row_length;
+    // Loop over each row
+    for (i = 0; i < r; i++){
+        row_length = r-abs(n-1-i);
+        int a[r][3];
+        // Get the coordinates of the rows of the first diagonal
+        get_coordinates_of_row(a, 0, i, n);
+
+        // Loop over each element in the row and check if it is already set
+        for (j = 0; j < row_length; j++){
+            if (board[a[j][0]][a[j][1]][a[j][2]] > 0){
+                continue;
+            }
+            // It is not set, hence we can select a new value to set at that position and recurse
+            for (k = 0; k < N; k++){
+                // find a value which hasn't been set yet
+                if (value_used[k])
+                    continue;
+                // set it and recurse
+                board[a[j][0]][a[j][1]][a[j][2]] = k + 1;
+                value_used[k] = true;
+                // if it works out, return true
+                if (solver_depth_first(r, n, N, M, board, value_used)){
+                    return true;
+                }
+                // else reset the tile and try the next available value
+                else{
+                    board[a[j][0]][a[j][1]][a[j][2]] = 0;
+                    value_used[k] = false;
+                }
+            }
+            // we couldnt find any value to set, so we have to try a different branch
+            return false;
+        }
+    }
+
+    // To this point we only get if all tiles have a value assigned
+    // Evaluate the board and return the result
+    return validate_board(r, board, M, n);
+}
+
 int main(int argc, char** argv) {
     // Side length of the hexagon
     int n = 3; // 3, 4, 2
@@ -165,11 +207,17 @@ int main(int argc, char** argv) {
     }
     fill_board(zeros, r, n, board);
 
+    // A list which determines whether a value has already bin set
+    bool value_used[N];
+    for (i = 0; i < N; i++){
+        value_used[i] = 0;
+    }
+
 
     // testing
 
-    bool ret = validateBoard(r, board, M, n);
-    printf("Board full of 0s returns %d\n", ret);
+    // bool ret = validate_board(r, board, M, n);
+    // printf("Board full of 0s returns %d\n", ret);
 
     int correct_values[] = {15,13,10,14,8,4,12,9,6,5,2,16,11,1,7,19,18,17,3};
     // int correct_values[] = {1,2,3,4,5,6,7};
@@ -177,8 +225,21 @@ int main(int argc, char** argv) {
     int correct_board[r][r][r];
     fill_board(correct_values, r, n, correct_board);
 
-    ret = validateBoard(r, correct_board, M, n);
-    printf("Correct board returns %d\n", ret);
+    // ret = validate_board(r, correct_board, M, n);
+    // printf("Correct board returns %d\n", ret);
+
+    // print_board(r, n, correct_board);
+
+    // printf("Start the depth first solver\n");
+
+    int vals_to_solve[] = {15,13,10,14,8,4,12,9,6,5,2,16,11,0,0,0,0,0,0};
+    int board_to_solve[r][r][r];
+    fill_board(vals_to_solve, r, n, board_to_solve);
+    print_board(r, n, board_to_solve);
+
+    bool ret = solver_depth_first(r, n, N, M, board_to_solve, value_used);
+    printf("Could solve the board or not? %d\n", ret);
+    print_board(r, n, board_to_solve);
 
     print_board(r, n, correct_board);
 
