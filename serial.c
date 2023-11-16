@@ -6,6 +6,7 @@ https://jtp.io/2017/01/12/aristotle-number-puzzle.html
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
+#include <sys/time.h>
 
 int find_starting_index(int n, int j){
     /* This function return the first index to access in the current row.
@@ -95,6 +96,43 @@ bool validate_board(int r, int (*board)[r][r], int M, int n){
     return true;
 }
 
+bool validate_tile(int r, int (*board)[r][r], int M, int n, int *tile_placed){
+    /* This function checks whether a newly placed tile is keeping the board valid.
+    This can be achieved by checking the validity of the three rows the tile is in in each diagonal.
+    */
+    int i, k;
+    int total, board_val, row_length;
+    bool all_set;
+    
+    // Loop through each diagonal of the hexagon
+    for (i = 0; i < 3; i++){
+        total = 0;
+        // This variable saves whether all tiles in the row have a value
+        all_set = true;
+        row_length = r-abs(n-1-tile_placed[i]);
+
+        // Select the row in which the tile is in in the given diagonal
+        int coord_arr[row_length][3];
+        get_coordinates_of_row(coord_arr, i, tile_placed[i], n);
+
+        // Add up each element in the row
+        for (k = 0; k < row_length; k++){
+            board_val = board[coord_arr[k][0]][coord_arr[k][1]][coord_arr[k][2]];
+            // Check if only partial solution in the row
+            if (board_val == 0)
+                all_set = false;
+            else
+                total += board_val;
+        }
+        
+        // Check if sum is equal to M if all values were set, otherwise just check if not larger than M
+        if ((all_set && total != M) || total > M){
+            return false;
+        }
+    }
+    return true;
+}
+
 void fill_board(int *values, int r, int n, int (*board)[r][r]){
     /* This function takes and array of values and fills them into the correct positions of the board.
     */
@@ -145,7 +183,7 @@ void print_board(int r, int n, int (*b)[r][r]){
     printf("\n");
 }
 
-bool solver_depth_first(int r, int n, int N, int M, int (*board)[r][r], bool *value_used){
+bool solver_depth_first(int r, int n, int N, int M, int (*board)[r][r], bool *value_used, bool check_partial){
     int i, j, k, row_length;
     // Loop over each row
     for (i = 0; i < r; i++){
@@ -167,8 +205,13 @@ bool solver_depth_first(int r, int n, int N, int M, int (*board)[r][r], bool *va
                 // set it and recurse
                 board[a[j][0]][a[j][1]][a[j][2]] = k + 1;
                 value_used[k] = true;
-                // if it works out, return true
-                if (solver_depth_first(r, n, N, M, board, value_used)){
+                // If we selected to check partial solutions, we are now checking if the tile placement keeps the board valid
+                // If so we recurse
+                if (check_partial && validate_tile(r, board, M, n, a[j]) && solver_depth_first(r, n, N, M, board, value_used, check_partial)){
+                    return true;
+                }
+                // If no partial check selected, we just recurse and return true if it works out
+                else if (!check_partial && solver_depth_first(r, n, N, M, board, value_used, check_partial)){
                     return true;
                 }
                 // else reset the tile and try the next available value
@@ -185,6 +228,15 @@ bool solver_depth_first(int r, int n, int N, int M, int (*board)[r][r], bool *va
     // To this point we only get if all tiles have a value assigned
     // Evaluate the board and return the result
     return validate_board(r, board, M, n);
+}
+
+void fill_value_list(int N, bool *array){
+    /* This function is used to initialize an array containing whether a value has been used.
+    */
+    int i;
+    for (i = 0; i < N; i++){
+        array[i] = false;
+    }
 }
 
 int main(int argc, char** argv) {
@@ -207,11 +259,9 @@ int main(int argc, char** argv) {
     }
     fill_board(zeros, r, n, board);
 
-    // A list which determines whether a value has already bin set
+    // A list which determines whether a value has already been set
     bool value_used[N];
-    for (i = 0; i < N; i++){
-        value_used[i] = 0;
-    }
+    fill_value_list(N, value_used);
 
 
     // testing
@@ -232,13 +282,34 @@ int main(int argc, char** argv) {
 
     // printf("Start the depth first solver\n");
 
-    int vals_to_solve[] = {15,13,10,14,8,4,12,9,6,5,2,16,11,0,0,0,0,0,0};
+    int vals_to_solve[] = {15,13,10,14,8,4,12,9,6,5,2,16,0,0,0,0,0,0,0};
+    int vals_to_solve_2[] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
     int board_to_solve[r][r][r];
-    fill_board(vals_to_solve, r, n, board_to_solve);
+    fill_board(vals_to_solve_2, r, n, board_to_solve);
     print_board(r, n, board_to_solve);
 
-    bool ret = solver_depth_first(r, n, N, M, board_to_solve, value_used);
+    struct timeval start_time, end_time;
+    gettimeofday(&start_time, NULL);
+
+    bool ret = solver_depth_first(r, n, N, M, board_to_solve, value_used, true);
+
+    gettimeofday(&end_time, NULL);
+
     printf("Could solve the board or not? %d\n", ret);
+    printf("This took %ld seconds. Used partial checks.", end_time.tv_sec - start_time.tv_sec);
+    print_board(r, n, board_to_solve);
+
+    fill_board(vals_to_solve, r, n, board_to_solve);
+    fill_value_list(N, value_used);
+
+    gettimeofday(&start_time, NULL);
+
+    ret = solver_depth_first(r, n, N, M, board_to_solve, value_used, false);
+
+    gettimeofday(&end_time, NULL);
+
+    printf("Could solve the board or not? %d\n", ret);
+    printf("This took %ld seconds.", end_time.tv_sec - start_time.tv_sec);
     print_board(r, n, board_to_solve);
 
     print_board(r, n, correct_board);
