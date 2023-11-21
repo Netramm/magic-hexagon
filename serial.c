@@ -6,7 +6,7 @@ https://jtp.io/2017/01/12/aristotle-number-puzzle.html
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
-#include <sys/time.h>
+#include <time.h>
 
 int find_starting_index(int n, int j){
     /* This function return the first index to access in the current row.
@@ -183,7 +183,7 @@ void print_board(int r, int n, int (*b)[r][r]){
     printf("\n");
 }
 
-bool solver_depth_first(int r, int n, int N, int M, int (*board)[r][r], bool *value_used, bool check_partial){
+bool solver_depth_first(int r, int n, int N, int N_s, int M, int (*board)[r][r], bool *value_used, bool check_partial, bool find_all){
     int i, j, k, row_length;
     // Loop over each row
     for (i = 0; i < r; i++){
@@ -203,15 +203,15 @@ bool solver_depth_first(int r, int n, int N, int M, int (*board)[r][r], bool *va
                 if (value_used[k])
                     continue;
                 // set it and recurse
-                board[a[j][0]][a[j][1]][a[j][2]] = k + 1;
+                board[a[j][0]][a[j][1]][a[j][2]] = k + N_s;
                 value_used[k] = true;
                 // If we selected to check partial solutions, we are now checking if the tile placement keeps the board valid
                 // If so we recurse
-                if (check_partial && validate_tile(r, board, M, n, a[j]) && solver_depth_first(r, n, N, M, board, value_used, check_partial)){
+                if (check_partial && validate_tile(r, board, M, n, a[j]) && solver_depth_first(r, n, N, N_s, M, board, value_used, check_partial, find_all)){
                     return true;
                 }
                 // If no partial check selected, we just recurse and return true if it works out
-                else if (!check_partial && solver_depth_first(r, n, N, M, board, value_used, check_partial)){
+                else if (!check_partial && solver_depth_first(r, n, N, N_s, M, board, value_used, check_partial, find_all)){
                     return true;
                 }
                 // else reset the tile and try the next available value
@@ -226,8 +226,15 @@ bool solver_depth_first(int r, int n, int N, int M, int (*board)[r][r], bool *va
     }
 
     // To this point we only get if all tiles have a value assigned
-    // Evaluate the board and return the result
-    return validate_board(r, board, M, n);
+    // Evaluate the board and return the result or print the board if we try to find all solutions
+    bool ret = validate_board(r, board, M, n);
+    if (find_all && ret){
+        print_board(r, n, board);
+        return false;
+    }
+    else{
+        return ret;
+    }
 }
 
 void fill_value_list(int N, bool *array){
@@ -239,15 +246,46 @@ void fill_value_list(int N, bool *array){
     }
 }
 
+double get_time_diff(struct timespec start, struct timespec end){
+    return (end.tv_sec - start.tv_sec) + (double)(end.tv_nsec - start.tv_nsec) / (double)1000000000L;
+}
+
 int main(int argc, char** argv) {
     // Side length of the hexagon
     int n = 3; // 3, 4, 2
     // Numbe of rows of the hexagon
     int r = n*2-1;
-    // Number of tiles to place, numbered from 1 to 19
-    int N = 19; // 19, 37, 7
+    // Number range of tiles to place
+    int N_s = 1;
+    // int N_e = 3*n*n-3*n+1;
+    int N = 3*n*n-3*n+1;
     // Sum which has to be obtained in each row
     int M = 38;
+    // 
+    bool find_all = false;
+
+    // Read out command line arguments if supplied
+    if (argc == 4){
+        n = atoi(argv[1]);
+        r = n*2-1;
+        N_s = 1;
+        // N_e = 3*n*n-3*n+1;
+        N = 3*n*n-3*n+1;
+        M = atoi(argv[2]);
+        find_all = atoi(argv[3]);
+    }
+    else if (argc == 5){
+        n = atoi(argv[1]);
+        r = n*2-1;
+        N_s = atoi(argv[2]);
+        // N_e = atoi(argv[3]);
+        N = 3*n*n-3*n+1;
+        M = atoi(argv[3]);
+        find_all = atoi(argv[4]);
+    }
+    else if(argc > 1){
+        printf("Too few arguments, supply n, N_s, N_e and find_all!");
+    }
 
     // The mutidimensional-array storing the current board, initialized with 0's
     // This representation is inspired by: https://www.redblobgames.com/grids/hexagons/
@@ -269,11 +307,11 @@ int main(int argc, char** argv) {
     // bool ret = validate_board(r, board, M, n);
     // printf("Board full of 0s returns %d\n", ret);
 
-    int correct_values[] = {15,13,10,14,8,4,12,9,6,5,2,16,11,1,7,19,18,17,3};
+    // int correct_values[] = {15,13,10,14,8,4,12,9,6,5,2,16,11,1,7,19,18,17,3};
     // int correct_values[] = {1,2,3,4,5,6,7};
     // int correct_values[] = {15,13,10,14,8,4,12,9,6,5,2,16,11,1,7,19,18,17,3,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18};
-    int correct_board[r][r][r];
-    fill_board(correct_values, r, n, correct_board);
+    // int correct_board[r][r][r];
+    // fill_board(correct_values, r, n, correct_board);
 
     // ret = validate_board(r, correct_board, M, n);
     // printf("Correct board returns %d\n", ret);
@@ -282,37 +320,42 @@ int main(int argc, char** argv) {
 
     // printf("Start the depth first solver\n");
 
-    int vals_to_solve[] = {15,13,10,14,8,4,12,9,6,5,2,16,0,0,0,0,0,0,0};
-    int vals_to_solve_2[] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
+    // int vals_to_solve[] = {14, 33, 30, 34, 39, 6, 24, 20, 22, 37, 13, 11, 8, 25, 17, 21, 23, 7, 9, 3, 10, 38, 36, 4, 5, 12, 28, 26, 35, 16, 18, 27, 15, 19, 31, 29, 32};
+    // int vals_to_solve[] = {14, 33, 30, 34, 39, 6, 24, 20, 22, 37, 13, 11, 8, 25, 17, 21, 23, 7, 9, 3, 10, 38, 36, 4, 5, 12, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+    int vals_to_solve[N];
+    for (i = 0; i < N; i++){
+        vals_to_solve[i] = 0;
+    }
     int board_to_solve[r][r][r];
-    fill_board(vals_to_solve_2, r, n, board_to_solve);
-    print_board(r, n, board_to_solve);
-
-    struct timeval start_time, end_time;
-    gettimeofday(&start_time, NULL);
-
-    bool ret = solver_depth_first(r, n, N, M, board_to_solve, value_used, true);
-
-    gettimeofday(&end_time, NULL);
-
-    printf("Could solve the board or not? %d\n", ret);
-    printf("This took %ld seconds. Used partial checks.", end_time.tv_sec - start_time.tv_sec);
-    print_board(r, n, board_to_solve);
-
     fill_board(vals_to_solve, r, n, board_to_solve);
-    fill_value_list(N, value_used);
-
-    gettimeofday(&start_time, NULL);
-
-    ret = solver_depth_first(r, n, N, M, board_to_solve, value_used, false);
-
-    gettimeofday(&end_time, NULL);
-
-    printf("Could solve the board or not? %d\n", ret);
-    printf("This took %ld seconds.", end_time.tv_sec - start_time.tv_sec);
     print_board(r, n, board_to_solve);
 
-    print_board(r, n, correct_board);
+    struct timespec start_time, end_time;
+    clock_gettime(CLOCK_MONOTONIC, &start_time);
+
+    bool ret = solver_depth_first(r, n, N, N_s, M, board_to_solve, value_used, true, find_all);
+
+    clock_gettime(CLOCK_MONOTONIC, &end_time);
+
+    printf("Could solve the board or not? %d\n", ret);
+    double diff = get_time_diff(start_time, end_time);
+    printf("This took %lf seconds. Used partial checks.", diff);
+    print_board(r, n, board_to_solve);
+
+    // fill_board(vals_to_solve, r, n, board_to_solve);
+    // fill_value_list(N, value_used);
+
+    // gettimeofday(&start_time, NULL);
+
+    // ret = solver_depth_first(r, n, N, M, board_to_solve, value_used, false);
+
+    // gettimeofday(&end_time, NULL);
+
+    // printf("Could solve the board or not? %d\n", ret);
+    // printf("This took %ld seconds.", end_time.tv_sec - start_time.tv_sec);
+    // print_board(r, n, board_to_solve);
+
+    // print_board(r, n, correct_board);
 
     return 0;
 }
