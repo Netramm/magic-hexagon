@@ -237,6 +237,76 @@ bool solver_depth_first(int r, int n, int N, int N_s, int M, int (*board)[r][r],
     }
 }
 
+int generate_starting_row_old(int n, int N, int N_s, int M, int nr_s, int (*starting_row_list)[n]){
+    int i, j, k;
+    int cnt = 0;
+    for (i = 0; i < N; i++){
+        for (j = 0; j < N; j++){
+            if (i == j)
+                continue;
+            for (k = i + 1; k < N; k++){
+                if (k == j || i+j+k+3*N_s != M)
+                    continue;
+                starting_row_list[cnt][0] = i+N_s;
+                starting_row_list[cnt][1] = j+N_s;
+                starting_row_list[cnt][2] = k+N_s;
+                cnt++;
+                if (cnt == nr_s)
+                    return cnt;
+            }
+        }
+    }
+    return cnt;
+}
+
+bool generate_starting_row(int n, int N, int N_s, int M, int nr_s, int (*starting_row_list)[n], int *prev_nrs, int ind, int *cnt){
+    int i, j;
+    bool duplicated = false;
+    int start_index = 0;
+
+    if (ind < n){
+        // TODO, has to be checked more general!!!!!!!!!!!!!!!!!!!!!!!
+        // if (ind > (int)(n-1) / 2){
+        //     start_index = prev_nrs[n - ind - 1] + 1;
+        // }
+        for (i = start_index; i < N; i++){
+            duplicated = false;
+            for (j = 0; j < ind; j++){
+                if (prev_nrs[j] == i){
+                    duplicated = true;
+                    break;
+                }
+            }
+            if (duplicated)
+                continue;
+            prev_nrs[ind] = i;
+            if (ind < n-1){
+                if (!generate_starting_row(n, N, N_s, M, nr_s, starting_row_list, prev_nrs, ind + 1, cnt)){
+                    return false;
+                }
+            }
+            else{
+                int sum = 0;
+                int k;
+                for (k = 0; k < n; k++){
+                    sum += prev_nrs[k] + N_s;
+                }
+                if (sum != M){
+                    continue;
+                }
+                for (k = 0; k < n; k++){
+                    starting_row_list[*cnt][k] = prev_nrs[k] + N_s;
+                }
+                (*cnt)++;
+                if (*cnt == nr_s)
+                    return false;
+            }
+        }
+    }
+
+    return true;
+}
+
 void fill_value_list(int N, bool *array){
     /* This function is used to initialize an array containing whether a value has been used.
     */
@@ -322,25 +392,62 @@ int main(int argc, char** argv) {
 
     // int vals_to_solve[] = {14, 33, 30, 34, 39, 6, 24, 20, 22, 37, 13, 11, 8, 25, 17, 21, 23, 7, 9, 3, 10, 38, 36, 4, 5, 12, 28, 26, 35, 16, 18, 27, 15, 19, 31, 29, 32};
     // int vals_to_solve[] = {14, 33, 30, 34, 39, 6, 24, 20, 22, 37, 13, 11, 8, 25, 17, 21, 23, 7, 9, 3, 10, 38, 36, 4, 5, 12, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
-    int vals_to_solve[N];
-    for (i = 0; i < N; i++){
-        vals_to_solve[i] = 0;
+
+
+
+
+
+    // int vals_to_solve[N];
+    // for (i = 0; i < N; i++){
+    //     vals_to_solve[i] = 0;
+    // }
+    // int board_to_solve[r][r][r];
+    // fill_board(vals_to_solve, r, n, board_to_solve);
+    // print_board(r, n, board_to_solve);
+
+    // struct timespec start_time, end_time;
+    // clock_gettime(CLOCK_MONOTONIC, &start_time);
+
+    // bool ret = solver_depth_first(r, n, N, N_s, M, board_to_solve, value_used, true, find_all);
+
+    // clock_gettime(CLOCK_MONOTONIC, &end_time);
+
+    // printf("Could solve the board or not? %d\n", ret);
+    // double diff = get_time_diff(start_time, end_time);
+    // printf("This took %lf seconds. Used partial checks.", diff);
+    // print_board(r, n, board_to_solve);
+
+    // printf("%d %d %d %d\n", n, N, N_s, M);
+
+
+
+    int nr_s = 20000;
+    if (find_all){
+        
     }
-    int board_to_solve[r][r][r];
-    fill_board(vals_to_solve, r, n, board_to_solve);
-    print_board(r, n, board_to_solve);
 
     struct timespec start_time, end_time;
     clock_gettime(CLOCK_MONOTONIC, &start_time);
 
-    bool ret = solver_depth_first(r, n, N, N_s, M, board_to_solve, value_used, true, find_all);
+    int starting_row[nr_s][n];
+    int prev_nrs[n];
+    int cnt = 0;
+
+    int ret2 = generate_starting_row(n, N, N_s, M, nr_s, starting_row, prev_nrs, 0, &cnt);
 
     clock_gettime(CLOCK_MONOTONIC, &end_time);
-
-    printf("Could solve the board or not? %d\n", ret);
+    
+    
+    printf("Number of starting positions: %d\n%d %d %d %d %d\n", cnt, ret2, n, N, N_s, M);
+    printf("First row: %d %d %d %d\n", starting_row[0][0], starting_row[0][1], starting_row[0][2], starting_row[0][3]);
+    printf("Last row: %d %d %d %d\n", starting_row[nr_s - 1][0], starting_row[nr_s - 1][1], starting_row[nr_s - 1][2], starting_row[nr_s - 1][3]);
     double diff = get_time_diff(start_time, end_time);
-    printf("This took %lf seconds. Used partial checks.", diff);
-    print_board(r, n, board_to_solve);
+    printf("This took %lf seconds.", diff);
+
+
+
+
+
 
     // fill_board(vals_to_solve, r, n, board_to_solve);
     // fill_value_list(N, value_used);

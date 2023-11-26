@@ -8,4 +8,9 @@
 # define the queue
 #PBS -q short_cpuQ
 
+# set error and output folders
+#PBS -o outputs
+#PBS -e outputs
+
+# ./project/magic-hexagon/serial.o 3 38 0
 ./project/magic-hexagon/serial.o 4 3 111 0
