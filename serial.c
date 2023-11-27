@@ -7,6 +7,7 @@ https://jtp.io/2017/01/12/aristotle-number-puzzle.html
 #include <stdlib.h>
 #include <stdbool.h>
 #include <time.h>
+#include <unistd.h>
 
 int find_starting_index(int n, int j){
     /* This function return the first index to access in the current row.
@@ -320,149 +321,157 @@ double get_time_diff(struct timespec start, struct timespec end){
     return (end.tv_sec - start.tv_sec) + (double)(end.tv_nsec - start.tv_nsec) / (double)1000000000L;
 }
 
-int main(int argc, char** argv) {
-    // Side length of the hexagon
-    int n = 3; // 3, 4, 2
-    // Numbe of rows of the hexagon
-    int r = n*2-1;
-    // Number range of tiles to place
-    int N_s = 1;
-    // int N_e = 3*n*n-3*n+1;
-    int N = 3*n*n-3*n+1;
-    // Sum which has to be obtained in each row
-    int M = 38;
-    // Whether we want to find all solutions or only the first one
-    bool find_all = false;
-    // Max number of starting positions of the first row we are looking
-    int nr_s = 1000;
-
-    // Read out command line arguments if supplied
-    if (argc == 5){
-        n = atoi(argv[1]);
-        r = n*2-1;
-        N_s = 1;
-        // N_e = 3*n*n-3*n+1;
-        N = 3*n*n-3*n+1;
-        M = atoi(argv[2]);
-        find_all = atoi(argv[3]);
-        nr_s = atoi(argv[4]);
-    }
-    else if (argc == 6){
-        n = atoi(argv[1]);
-        r = n*2-1;
-        N_s = atoi(argv[2]);
-        // N_e = atoi(argv[3]);
-        N = 3*n*n-3*n+1;
-        M = atoi(argv[3]);
-        find_all = atoi(argv[4]);
-        nr_s = atoi(argv[5]);
-    }
-    else if(argc > 1){
-        printf("Too few arguments, supply n, N_s, N_e and find_all!");
-    }
-
+bool solver(int n, int r, int N_s, int N, int M, bool find_all, bool use_precomputed_row, int nr_s){
     // The mutidimensional-array storing the current board, initialized with 0's
     // This representation is inspired by: https://www.redblobgames.com/grids/hexagons/
     int board[r][r][r];
-    int zeros[N];
-    int i;
-    for (i = 0; i < N; i++){
-        zeros[i] = 0;
-    }
-    fill_board(zeros, r, n, board);
-
-    // A list which determines whether a value has already been set
-    bool value_used[N];
-    fill_value_list(N, value_used);
-
-
-    // ------------------------ testing
-
-    // ---------In this part we test the validation function
-
-    // bool ret = validate_board(r, board, M, n);
-    // printf("Board full of 0s returns %d\n", ret);
-
-    // int correct_values[] = {15,13,10,14,8,4,12,9,6,5,2,16,11,1,7,19,18,17,3};
-    // int correct_values[] = {1,2,3,4,5,6,7};
-    // int correct_values[] = {15,13,10,14,8,4,12,9,6,5,2,16,11,1,7,19,18,17,3,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18};
-    // int correct_board[r][r][r];
-    // fill_board(correct_values, r, n, correct_board);
-
-    // ret = validate_board(r, correct_board, M, n);
-    // printf("Correct board returns %d\n", ret);
-
-    // print_board(r, n, correct_board);
-
-
-
-    // ---------In this part we test the simple solver
-
-    // int vals_to_solve[] = {14, 33, 30, 34, 39, 6, 24, 20, 22, 37, 13, 11, 8, 25, 17, 21, 23, 7, 9, 3, 10, 38, 36, 4, 5, 12, 28, 26, 35, 16, 18, 27, 15, 19, 31, 29, 32};
-    // int vals_to_solve[] = {14, 33, 30, 34, 39, 6, 24, 20, 22, 37, 13, 11, 8, 25, 17, 21, 23, 7, 9, 3, 10, 38, 36, 4, 5, 12, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
-
-    int board_to_solve[r][r][r];
-    struct timespec start_time, end_time;
-
-    clock_gettime(CLOCK_MONOTONIC, &start_time);
-
-    fill_board(zeros, r, n, board_to_solve);
-    // print_board(r, n, board_to_solve);
-
-
-    // bool ret = solver_depth_first(r, n, N, N_s, M, board_to_solve, value_used, true, find_all);
-    bool ret = true;
-
-    clock_gettime(CLOCK_MONOTONIC, &end_time);
-
-    printf("Could solve the board or not? %d\n", ret);
-    double diff = get_time_diff(start_time, end_time);
-    printf("This took %lf seconds.", diff);
-    print_board(r, n, board_to_solve);
-
-    // ----------In this part we test genearting the starting positions
-
-    // struct timespec start_time, end_time;
-    clock_gettime(CLOCK_MONOTONIC, &start_time);
-
-    int starting_row[nr_s][n];
-    int prev_nrs[n];
-    int cnt = 0;
-
-    generate_starting_row(n, N, N_s, M, nr_s, starting_row, prev_nrs, 0, &cnt);
-
-    clock_gettime(CLOCK_MONOTONIC, &end_time);
-    
-    
-    printf("Number of starting positions: %d\n", cnt);
-    double diff2 = get_time_diff(start_time, end_time);
-    printf("This took %lf seconds to generate.\n", diff2);
-
-    // -----------Use the starting positions to find solutions
-
-    int j;
     int vals_to_solve[N];
-    clock_gettime(CLOCK_MONOTONIC, &start_time);
+    int i;
     for (i = 0; i < N; i++){
         vals_to_solve[i] = 0;
     }
-    for (i = 0; i < cnt; i++){
-        fill_value_list(N, value_used);
-        for (j = 0; j < n; j++){
-            vals_to_solve[j] = starting_row[i][j];
-            value_used[starting_row[i][j] - N_s] = true;
+
+    // A list which determines whether a value has already been set
+    bool value_used[N];
+
+    if (use_precomputed_row){
+        int starting_row[nr_s][n];
+        int prev_nrs[n];
+        int cnt = 0;
+
+        bool ret_generator = generate_starting_row(n, N, N_s, M, nr_s, starting_row, prev_nrs, 0, &cnt);
+
+        if (!ret_generator){
+            printf("The number of possible starting rows exceeds the number selected!\nChoose a larger number to generate all starting rows.\n");
         }
-        fill_board(vals_to_solve, r, n, board_to_solve);
+        
+        printf("Number of possible starting rows: %d\n", cnt);
 
-        ret = solver_depth_first(r, n, N, N_s, M, board_to_solve, value_used, true, find_all);
+        int j;
+        bool ret_solver;
+        for (i = 0; i < cnt; i++){
+            fill_value_list(N, value_used);
+            for (j = 0; j < n; j++){
+                vals_to_solve[j] = starting_row[i][j];
+                value_used[starting_row[i][j] - N_s] = true;
+            }
+            fill_board(vals_to_solve, r, n, board);
 
+            ret_solver = solver_depth_first(r, n, N, N_s, M, board, value_used, true, find_all);
+            
+            if (!find_all && ret_solver){
+                printf("Solver found a solution!\nThis is the solution he found:\n");
+                print_board(r, n, board);
+                return true;
+            }
+        }
+        if (!find_all){
+            printf("Solver was not able to find a solution for this board!\n");
+            return false;
+        }
+
+        return true;
     }
+    else{
+        fill_board(vals_to_solve, r, n, board);
+        fill_value_list(N, value_used);
 
-    clock_gettime(CLOCK_MONOTONIC, &end_time);
-    double diff3 = get_time_diff(start_time, end_time);
-    printf("This took %lf seconds.\n", diff3);
+        bool ret_solver = solver_depth_first(r, n, N, N_s, M, board, value_used, true, find_all);
 
+        if (!find_all){
+            if (ret_solver){
+                printf("Solver found a solution!\nThis is the solution he found:\n");
+                print_board(r, n, board);
+                return true;
+            }
+            else{
+                printf("Solver was not able to find a solution for this board!\n");
+                return false;
+            }
+        }
 
+        return true;
+    }
+}
 
+int main(int argc, char** argv) {
+    int i;
+    for (i = 0; i < argc; i++){
+        printf("%s\n", argv[i]);
+    }
+    int opt;
+    while ((opt = getopt(argc, argv, "n:s::M:a:l:")) != -1){
+        printf("\n%s\n", optarg);
+    }
     return 0;
+
+    // // Side length of the hexagon
+    // int n = 3; // 3, 4, 2
+    // // Numbe of rows of the hexagon
+    // int r = n*2-1;
+    // // Number range of tiles to place
+    // int N_s = 1;
+    // // int N_e = 3*n*n-3*n+1;
+    // int N = 3*n*n-3*n+1;
+    // // Sum which has to be obtained in each row
+    // int M = 38;
+    // // Whether we want to find all solutions or only the first one
+    // bool find_all = false;
+    // // Max number of starting positions of the first row we are looking
+    // int nr_s = 1000;
+
+    // // Read out command line arguments if supplied
+    // if (argc == 5){
+    //     n = atoi(argv[1]);
+    //     r = n*2-1;
+    //     N_s = 1;
+    //     // N_e = 3*n*n-3*n+1;
+    //     N = 3*n*n-3*n+1;
+    //     M = atoi(argv[2]);
+    //     find_all = atoi(argv[3]);
+    //     nr_s = atoi(argv[4]);
+    // }
+    // else if (argc == 6){
+    //     n = atoi(argv[1]);
+    //     r = n*2-1;
+    //     N_s = atoi(argv[2]);
+    //     // N_e = atoi(argv[3]);
+    //     N = 3*n*n-3*n+1;
+    //     M = atoi(argv[3]);
+    //     find_all = atoi(argv[4]);
+    //     nr_s = atoi(argv[5]);
+    // }
+    // else if(argc > 1){
+    //     printf("Too few arguments, supply n, N_s, N_e and find_all!");
+    // }
+
+
+    // struct timespec start_time, end_time;
+    // double diff;
+    
+    // // --------------
+    // printf("\nStart solver without precomputed rows.\n\n");
+
+    // clock_gettime(CLOCK_MONOTONIC, &start_time);
+
+    // solver(n, r, N_s, N, M, find_all, false, nr_s);
+
+    // clock_gettime(CLOCK_MONOTONIC, &end_time);
+
+    // diff = get_time_diff(start_time, end_time);
+    // printf("This took %lf seconds.\n", diff);
+
+    // // --------------
+    // printf("\nStart solver with precomputed rows.\n\n");
+
+    // clock_gettime(CLOCK_MONOTONIC, &start_time);
+
+    // solver(n, r, N_s, N, M, find_all, true, nr_s);
+
+    // clock_gettime(CLOCK_MONOTONIC, &end_time);
+
+    // diff = get_time_diff(start_time, end_time);
+    // printf("This took %lf seconds.\n", diff);
+
+    // return 0;
 }

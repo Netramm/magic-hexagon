@@ -3,7 +3,7 @@
 #PBS -l select=1:ncpus=1:mem=2gb
 
 # set max execution time
-#PBS -l walltime=0:10:00
+#PBS -l walltime=0:05:00
 
 # define the queue
 #PBS -q short_cpuQ
@@ -12,5 +12,5 @@
 #PBS -o outputs
 #PBS -e outputs
 
-./project/magic-hexagon/serial.o 3 38 1 1000
-# ./project/magic-hexagon/serial.o 4 3 111 0 15000
+# ./project/magic-hexagon/serial.o -n 3 -M 38 -a 1 -l 1000
+./project/magic-hexagon/serial.o -n 4 -s3 -M 111 -a 0 -l 15000
