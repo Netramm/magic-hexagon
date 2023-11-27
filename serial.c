@@ -331,11 +331,13 @@ int main(int argc, char** argv) {
     int N = 3*n*n-3*n+1;
     // Sum which has to be obtained in each row
     int M = 38;
-    // 
+    // Whether we want to find all solutions or only the first one
     bool find_all = false;
+    // Max number of starting positions of the first row we are looking
+    int nr_s = 1000;
 
     // Read out command line arguments if supplied
-    if (argc == 4){
+    if (argc == 5){
         n = atoi(argv[1]);
         r = n*2-1;
         N_s = 1;
@@ -343,8 +345,9 @@ int main(int argc, char** argv) {
         N = 3*n*n-3*n+1;
         M = atoi(argv[2]);
         find_all = atoi(argv[3]);
+        nr_s = atoi(argv[4]);
     }
-    else if (argc == 5){
+    else if (argc == 6){
         n = atoi(argv[1]);
         r = n*2-1;
         N_s = atoi(argv[2]);
@@ -352,6 +355,7 @@ int main(int argc, char** argv) {
         N = 3*n*n-3*n+1;
         M = atoi(argv[3]);
         find_all = atoi(argv[4]);
+        nr_s = atoi(argv[5]);
     }
     else if(argc > 1){
         printf("Too few arguments, supply n, N_s, N_e and find_all!");
@@ -372,7 +376,9 @@ int main(int argc, char** argv) {
     fill_value_list(N, value_used);
 
 
-    // testing
+    // ------------------------ testing
+
+    // ---------In this part we test the validation function
 
     // bool ret = validate_board(r, board, M, n);
     // printf("Board full of 0s returns %d\n", ret);
@@ -388,81 +394,75 @@ int main(int argc, char** argv) {
 
     // print_board(r, n, correct_board);
 
-    // printf("Start the depth first solver\n");
+
+
+    // ---------In this part we test the simple solver
 
     // int vals_to_solve[] = {14, 33, 30, 34, 39, 6, 24, 20, 22, 37, 13, 11, 8, 25, 17, 21, 23, 7, 9, 3, 10, 38, 36, 4, 5, 12, 28, 26, 35, 16, 18, 27, 15, 19, 31, 29, 32};
     // int vals_to_solve[] = {14, 33, 30, 34, 39, 6, 24, 20, 22, 37, 13, 11, 8, 25, 17, 21, 23, 7, 9, 3, 10, 38, 36, 4, 5, 12, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 
+    int board_to_solve[r][r][r];
+    struct timespec start_time, end_time;
 
+    clock_gettime(CLOCK_MONOTONIC, &start_time);
 
-
-
-    // int vals_to_solve[N];
-    // for (i = 0; i < N; i++){
-    //     vals_to_solve[i] = 0;
-    // }
-    // int board_to_solve[r][r][r];
-    // fill_board(vals_to_solve, r, n, board_to_solve);
+    fill_board(zeros, r, n, board_to_solve);
     // print_board(r, n, board_to_solve);
 
-    // struct timespec start_time, end_time;
-    // clock_gettime(CLOCK_MONOTONIC, &start_time);
 
     // bool ret = solver_depth_first(r, n, N, N_s, M, board_to_solve, value_used, true, find_all);
+    bool ret = true;
 
-    // clock_gettime(CLOCK_MONOTONIC, &end_time);
+    clock_gettime(CLOCK_MONOTONIC, &end_time);
 
-    // printf("Could solve the board or not? %d\n", ret);
-    // double diff = get_time_diff(start_time, end_time);
-    // printf("This took %lf seconds. Used partial checks.", diff);
-    // print_board(r, n, board_to_solve);
+    printf("Could solve the board or not? %d\n", ret);
+    double diff = get_time_diff(start_time, end_time);
+    printf("This took %lf seconds.", diff);
+    print_board(r, n, board_to_solve);
 
-    // printf("%d %d %d %d\n", n, N, N_s, M);
+    // ----------In this part we test genearting the starting positions
 
-
-
-    int nr_s = 20000;
-    if (find_all){
-        
-    }
-
-    struct timespec start_time, end_time;
+    // struct timespec start_time, end_time;
     clock_gettime(CLOCK_MONOTONIC, &start_time);
 
     int starting_row[nr_s][n];
     int prev_nrs[n];
     int cnt = 0;
 
-    int ret2 = generate_starting_row(n, N, N_s, M, nr_s, starting_row, prev_nrs, 0, &cnt);
+    generate_starting_row(n, N, N_s, M, nr_s, starting_row, prev_nrs, 0, &cnt);
 
     clock_gettime(CLOCK_MONOTONIC, &end_time);
     
     
-    printf("Number of starting positions: %d\n%d %d %d %d %d\n", cnt, ret2, n, N, N_s, M);
-    printf("First row: %d %d %d %d\n", starting_row[0][0], starting_row[0][1], starting_row[0][2], starting_row[0][3]);
-    printf("Last row: %d %d %d %d\n", starting_row[nr_s - 1][0], starting_row[nr_s - 1][1], starting_row[nr_s - 1][2], starting_row[nr_s - 1][3]);
-    double diff = get_time_diff(start_time, end_time);
-    printf("This took %lf seconds.", diff);
+    printf("Number of starting positions: %d\n", cnt);
+    double diff2 = get_time_diff(start_time, end_time);
+    printf("This took %lf seconds to generate.\n", diff2);
+
+    // -----------Use the starting positions to find solutions
+
+    int j;
+    int vals_to_solve[N];
+    clock_gettime(CLOCK_MONOTONIC, &start_time);
+    for (i = 0; i < N; i++){
+        vals_to_solve[i] = 0;
+    }
+    for (i = 0; i < cnt; i++){
+        fill_value_list(N, value_used);
+        for (j = 0; j < n; j++){
+            vals_to_solve[j] = starting_row[i][j];
+            value_used[starting_row[i][j] - N_s] = true;
+        }
+        fill_board(vals_to_solve, r, n, board_to_solve);
+
+        ret = solver_depth_first(r, n, N, N_s, M, board_to_solve, value_used, true, find_all);
+
+    }
+
+    clock_gettime(CLOCK_MONOTONIC, &end_time);
+    double diff3 = get_time_diff(start_time, end_time);
+    printf("This took %lf seconds.\n", diff3);
 
 
-
-
-
-
-    // fill_board(vals_to_solve, r, n, board_to_solve);
-    // fill_value_list(N, value_used);
-
-    // gettimeofday(&start_time, NULL);
-
-    // ret = solver_depth_first(r, n, N, M, board_to_solve, value_used, false);
-
-    // gettimeofday(&end_time, NULL);
-
-    // printf("Could solve the board or not? %d\n", ret);
-    // printf("This took %ld seconds.", end_time.tv_sec - start_time.tv_sec);
-    // print_board(r, n, board_to_solve);
-
-    // print_board(r, n, correct_board);
 
     return 0;
 }

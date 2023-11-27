@@ -12,5 +12,5 @@
 #PBS -o outputs
 #PBS -e outputs
 
-# ./project/magic-hexagon/serial.o 3 38 0
-./project/magic-hexagon/serial.o 4 3 111 0
+./project/magic-hexagon/serial.o 3 38 1 1000
+# ./project/magic-hexagon/serial.o 4 3 111 0 15000
