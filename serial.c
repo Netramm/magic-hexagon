@@ -395,83 +395,77 @@ bool solver(int n, int r, int N_s, int N, int M, bool find_all, bool use_precomp
 }
 
 int main(int argc, char** argv) {
-    int i;
-    for (i = 0; i < argc; i++){
-        printf("%s\n", argv[i]);
-    }
+    // Side length of the hexagon
+    int n = 3; // 3, 4, 2
+    // Numbe of rows of the hexagon
+    int r = n*2-1;
+    // Number range of tiles to place
+    int N_s = 1;
+    // int N_e = 3*n*n-3*n+1;
+    int N = 3*n*n-3*n+1;
+    // Sum which has to be obtained in each row
+    int M = 38;
+    // Whether we want to find all solutions or only the first one
+    bool find_all = false;
+    // Max number of starting positions of the first row we are looking
+    int nr_s = 1000;
+
+    // Read out command line arguments if supplied
     int opt;
-    while ((opt = getopt(argc, argv, "n:s::M:a:l:")) != -1){
-        printf("\n%s\n", optarg);
+    while ((opt = getopt(argc, argv, "n:s::M:a:l::")) != -1){
+        switch (opt){
+            case 'n':
+                n = atoi(optarg);
+                r = n*2-1;
+                N = 3*n*n-3*n+1;
+                // N_e = 3*n*n-3*n+1;
+                break;
+            case 's':
+                N_s = atoi(optarg);
+                break;
+            case 'M':
+                M = atoi(optarg);
+                break;
+            case 'a':
+                find_all = atoi(optarg);
+                break;
+            case 'l':
+                nr_s = atoi(optarg);
+                break;
+            
+            default:
+                printf("Command line argument could not be understood!\n");
+                break;
+        }
     }
-    return 0;
-
-    // // Side length of the hexagon
-    // int n = 3; // 3, 4, 2
-    // // Numbe of rows of the hexagon
-    // int r = n*2-1;
-    // // Number range of tiles to place
-    // int N_s = 1;
-    // // int N_e = 3*n*n-3*n+1;
-    // int N = 3*n*n-3*n+1;
-    // // Sum which has to be obtained in each row
-    // int M = 38;
-    // // Whether we want to find all solutions or only the first one
-    // bool find_all = false;
-    // // Max number of starting positions of the first row we are looking
-    // int nr_s = 1000;
-
-    // // Read out command line arguments if supplied
-    // if (argc == 5){
-    //     n = atoi(argv[1]);
-    //     r = n*2-1;
-    //     N_s = 1;
-    //     // N_e = 3*n*n-3*n+1;
-    //     N = 3*n*n-3*n+1;
-    //     M = atoi(argv[2]);
-    //     find_all = atoi(argv[3]);
-    //     nr_s = atoi(argv[4]);
-    // }
-    // else if (argc == 6){
-    //     n = atoi(argv[1]);
-    //     r = n*2-1;
-    //     N_s = atoi(argv[2]);
-    //     // N_e = atoi(argv[3]);
-    //     N = 3*n*n-3*n+1;
-    //     M = atoi(argv[3]);
-    //     find_all = atoi(argv[4]);
-    //     nr_s = atoi(argv[5]);
-    // }
-    // else if(argc > 1){
-    //     printf("Too few arguments, supply n, N_s, N_e and find_all!");
-    // }
 
 
-    // struct timespec start_time, end_time;
-    // double diff;
+    struct timespec start_time, end_time;
+    double diff;
     
-    // // --------------
-    // printf("\nStart solver without precomputed rows.\n\n");
+    // --------------
+    printf("\nStart solver without precomputed rows.\n\n");
 
-    // clock_gettime(CLOCK_MONOTONIC, &start_time);
+    clock_gettime(CLOCK_MONOTONIC, &start_time);
 
-    // solver(n, r, N_s, N, M, find_all, false, nr_s);
+    solver(n, r, N_s, N, M, find_all, false, nr_s);
 
-    // clock_gettime(CLOCK_MONOTONIC, &end_time);
+    clock_gettime(CLOCK_MONOTONIC, &end_time);
 
-    // diff = get_time_diff(start_time, end_time);
-    // printf("This took %lf seconds.\n", diff);
+    diff = get_time_diff(start_time, end_time);
+    printf("This took %lf seconds.\n", diff);
 
-    // // --------------
-    // printf("\nStart solver with precomputed rows.\n\n");
+    // --------------
+    printf("\nStart solver with precomputed rows.\n\n");
 
-    // clock_gettime(CLOCK_MONOTONIC, &start_time);
+    clock_gettime(CLOCK_MONOTONIC, &start_time);
 
-    // solver(n, r, N_s, N, M, find_all, true, nr_s);
+    solver(n, r, N_s, N, M, find_all, true, nr_s);
 
-    // clock_gettime(CLOCK_MONOTONIC, &end_time);
+    clock_gettime(CLOCK_MONOTONIC, &end_time);
 
-    // diff = get_time_diff(start_time, end_time);
-    // printf("This took %lf seconds.\n", diff);
+    diff = get_time_diff(start_time, end_time);
+    printf("This took %lf seconds.\n", diff);
 
-    // return 0;
+    return 0;
 }
