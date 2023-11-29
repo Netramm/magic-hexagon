@@ -8,6 +8,7 @@ https://jtp.io/2017/01/12/aristotle-number-puzzle.html
 #include <stdbool.h>
 #include <time.h>
 #include <unistd.h>
+#include <mpi.h>
 
 int find_starting_index(int n, int j){
     /* This function return the first index to access in the current row.
@@ -260,7 +261,7 @@ int generate_starting_row_old(int n, int N, int N_s, int M, int nr_s, int (*star
     return cnt;
 }
 
-bool generate_starting_row(int n, int N, int N_s, int M, int nr_s, int (*starting_row_list)[n], int *prev_nrs, int ind, int *cnt){
+bool generate_starting_row(int n, int N, int N_s, int M, int nr_s, int (*starting_row_list), int *prev_nrs, int ind, int *cnt){
     int i, j;
     bool duplicated = false;
     int start_index = 0;
@@ -296,7 +297,7 @@ bool generate_starting_row(int n, int N, int N_s, int M, int nr_s, int (*startin
                     continue;
                 }
                 for (k = 0; k < n; k++){
-                    starting_row_list[*cnt][k] = prev_nrs[k] + N_s;
+                    starting_row_list[(*cnt) * n + k] = prev_nrs[k] + N_s;
                 }
                 (*cnt)++;
                 if (*cnt == nr_s)
@@ -321,7 +322,7 @@ double get_time_diff(struct timespec start, struct timespec end){
     return (end.tv_sec - start.tv_sec) + (double)(end.tv_nsec - start.tv_nsec) / (double)1000000000L;
 }
 
-bool solver(int n, int r, int N_s, int N, int M, bool find_all, bool use_precomputed_row, int nr_s){
+bool solver(int n, int r, int N_s, int N, int M, bool find_all, bool use_precomputed_row, int nr_s, bool parallel_exec){
     // The mutidimensional-array storing the current board, initialized with 0's
     // This representation is inspired by: https://www.redblobgames.com/grids/hexagons/
     int board[r][r][r];
@@ -335,61 +336,134 @@ bool solver(int n, int r, int N_s, int N, int M, bool find_all, bool use_precomp
     bool value_used[N];
 
     if (use_precomputed_row){
-        int starting_row[nr_s][n];
-        int prev_nrs[n];
-        int cnt = 0;
+        // If executed in parallel split the tasks
+        if (parallel_exec){
+            // Get the number of processes
+            int comm_sz;
+            MPI_Comm_size(MPI_COMM_WORLD, &comm_sz);
 
-        bool ret_generator = generate_starting_row(n, N, N_s, M, nr_s, starting_row, prev_nrs, 0, &cnt);
+            // Get the rank of the process
+            int my_rank;
+            MPI_Comm_rank(MPI_COMM_WORLD, &my_rank);
 
-        if (!ret_generator){
-            printf("The number of possible starting rows exceeds the number selected!\nChoose a larger number to generate all starting rows.\n");
-        }
-        
-        printf("Number of possible starting rows: %d\n", cnt);
+            // Calculate possible starting rows on the first process
+            int starting_row[nr_s * n];
+            int cnt;
+            if (my_rank == 0){
+                int prev_nrs[n];
+                cnt = 0;
 
-        int j;
-        bool ret_solver;
-        for (i = 0; i < cnt; i++){
-            fill_value_list(N, value_used);
-            for (j = 0; j < n; j++){
-                vals_to_solve[j] = starting_row[i][j];
-                value_used[starting_row[i][j] - N_s] = true;
+                bool ret_generator = generate_starting_row(n, N, N_s, M, nr_s, starting_row, prev_nrs, 0, &cnt);
+
+                if (!ret_generator){
+                    printf("The number of possible starting rows exceeds the number selected!\nChoose a larger number to generate all starting rows.\n");
+                }
+                
+                printf("Number of possible starting rows: %d\n", cnt);
+
             }
-            fill_board(vals_to_solve, r, n, board);
+            MPI_Bcast(&cnt, 1, MPI_INT, 0, MPI_COMM_WORLD);
 
-            ret_solver = solver_depth_first(r, n, N, N_s, M, board, value_used, true, find_all);
+            // Calculate how many positions per process have to be calculated
+            int share = (int)(cnt / comm_sz);
+
+            // scatterv
+            int local_starting_row[share * n];
+            MPI_Scatter(starting_row, share * n, MPI_INT, local_starting_row, share * n, MPI_INT, 0, MPI_COMM_WORLD);
+
+            int j;
+            for (i = 0; i < share; i++){
+                fill_value_list(N, value_used);
+                for (j = 0; j < n; j++){
+                    vals_to_solve[j] = local_starting_row[i * n + j];
+                    value_used[local_starting_row[i * n + j] - N_s] = true;
+                }
+                fill_board(vals_to_solve, r, n, board);
+
+                solver_depth_first(r, n, N, N_s, M, board, value_used, true, true);
+            }
+        }
+        else{
+            int starting_row[nr_s * n];
+            int prev_nrs[n];
+            int cnt = 0;
+
+            bool ret_generator = generate_starting_row(n, N, N_s, M, nr_s, starting_row, prev_nrs, 0, &cnt);
+
+            if (!ret_generator){
+                printf("The number of possible starting rows exceeds the number selected!\nChoose a larger number to generate all starting rows.\n");
+            }
             
-            if (!find_all && ret_solver){
-                printf("Solver found a solution!\nThis is the solution he found:\n");
-                print_board(r, n, board);
-                return true;
+            printf("Number of possible starting rows: %d\n", cnt);
+
+            int j;
+            bool ret_solver;
+            for (i = 0; i < cnt; i++){
+                fill_value_list(N, value_used);
+                for (j = 0; j < n; j++){
+                    vals_to_solve[j] = starting_row[i * n + j];
+                    value_used[starting_row[i * n + j] - N_s] = true;
+                }
+                fill_board(vals_to_solve, r, n, board);
+
+                ret_solver = solver_depth_first(r, n, N, N_s, M, board, value_used, true, find_all);
+                
+                if (!find_all && ret_solver){
+                    printf("Solver found a solution!\nThis is the solution he found:\n");
+                    print_board(r, n, board);
+                    return true;
+                }
             }
-        }
-        if (!find_all){
-            printf("Solver was not able to find a solution for this board!\n");
-            return false;
-        }
-
-        return true;
-    }
-    else{
-        fill_board(vals_to_solve, r, n, board);
-        fill_value_list(N, value_used);
-
-        bool ret_solver = solver_depth_first(r, n, N, N_s, M, board, value_used, true, find_all);
-
-        if (!find_all){
-            if (ret_solver){
-                printf("Solver found a solution!\nThis is the solution he found:\n");
-                print_board(r, n, board);
-                return true;
-            }
-            else{
+            if (!find_all){
                 printf("Solver was not able to find a solution for this board!\n");
                 return false;
             }
         }
 
+        return true;
+    }
+    else{
+        // If executed in parallel split the tasks
+        if (parallel_exec){
+            // Get the number of processes
+            int comm_sz;
+            MPI_Comm_size(MPI_COMM_WORLD, &comm_sz);
+
+            // Get the rank of the process
+            int my_rank;
+            MPI_Comm_rank(MPI_COMM_WORLD, &my_rank);
+
+            // Calculate how many positions per process have to be calculated
+            int share = (int)(N / comm_sz);
+
+            for (i = my_rank * share; i < (my_rank + 1) * share; i++){
+                fill_value_list(N, value_used);
+                vals_to_solve[0] = i + N_s;
+                value_used[i] = true;
+                fill_board(vals_to_solve, r, n, board);
+
+                solver_depth_first(r, n, N, N_s, M, board, value_used, true, true);
+            }
+        }
+        else{
+            fill_board(vals_to_solve, r, n, board);
+            fill_value_list(N, value_used);
+
+            bool ret_solver = solver_depth_first(r, n, N, N_s, M, board, value_used, true, find_all);
+
+            if (!find_all){
+                if (ret_solver){
+                    printf("Solver found a solution!\nThis is the solution he found:\n");
+                    print_board(r, n, board);
+                    return true;
+                }
+                else{
+                    printf("Solver was not able to find a solution for this board!\n");
+                    return false;
+                }
+            }
+
+        }
         return true;
     }
 }
@@ -409,10 +483,12 @@ int main(int argc, char** argv) {
     bool find_all = false;
     // Max number of starting positions of the first row we are looking
     int nr_s = 1000;
+    // Whether to run the code in parallel
+    bool parallel_execution = false;
 
     // Read out command line arguments if supplied
     int opt;
-    while ((opt = getopt(argc, argv, "n:s::M:a:l::")) != -1){
+    while ((opt = getopt(argc, argv, "n:s::M:a:l::p::")) != -1){
         switch (opt){
             case 'n':
                 n = atoi(optarg);
@@ -432,6 +508,9 @@ int main(int argc, char** argv) {
             case 'l':
                 nr_s = atoi(optarg);
                 break;
+            case 'p':
+                parallel_execution = atoi(optarg);
+                break;
             
             default:
                 printf("Command line argument could not be understood!\n");
@@ -439,33 +518,91 @@ int main(int argc, char** argv) {
         }
     }
 
+    if (parallel_execution){
+        // Initialize the MPI environment
+        MPI_Init(NULL, NULL);
 
-    struct timespec start_time, end_time;
-    double diff;
-    
-    // --------------
-    printf("\nStart solver without precomputed rows.\n\n");
+        // Get the number of processes
+        // int comm_sz;
+        // MPI_Comm_size(MPI_COMM_WORLD, &comm_sz);
 
-    clock_gettime(CLOCK_MONOTONIC, &start_time);
+        // Get the rank of the process
+        int my_rank;
+        MPI_Comm_rank(MPI_COMM_WORLD, &my_rank);
 
-    solver(n, r, N_s, N, M, find_all, false, nr_s);
+        double diff, max_diff, start_time, end_time;
 
-    clock_gettime(CLOCK_MONOTONIC, &end_time);
+        // if (my_rank == 0){
+        //     printf("\nStart parallel solver without precomputed rows.\n\n");
+        // }
 
-    diff = get_time_diff(start_time, end_time);
-    printf("This took %lf seconds.\n", diff);
+        // start_time = MPI_Wtime();
 
-    // --------------
-    printf("\nStart solver with precomputed rows.\n\n");
+        // solver(n, r, N_s, N, M, find_all, false, nr_s, parallel_execution);
 
-    clock_gettime(CLOCK_MONOTONIC, &start_time);
+        // end_time = MPI_Wtime();
 
-    solver(n, r, N_s, N, M, find_all, true, nr_s);
+        // diff = end_time - start_time;
 
-    clock_gettime(CLOCK_MONOTONIC, &end_time);
+        // MPI_Reduce(&diff, &max_diff, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
 
-    diff = get_time_diff(start_time, end_time);
-    printf("This took %lf seconds.\n", diff);
+        // if (my_rank == 0){
+        //     printf("This took %lf seconds.\n", max_diff);
+        // }
+
+
+        // --------------
+
+        if (my_rank == 0){
+            printf("\nStart parallel solver with precomputed rows.\n\n");
+        }
+
+        start_time = MPI_Wtime();
+
+        solver(n, r, N_s, N, M, find_all, true, nr_s, parallel_execution);
+
+        end_time = MPI_Wtime();
+
+        diff = end_time - start_time;
+
+        MPI_Reduce(&diff, &max_diff, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
+
+        if (my_rank == 0){
+            printf("This took %lf seconds.\n", max_diff);
+        }
+
+
+        // Finalize the MPI environment
+        MPI_Finalize();
+    }
+    else{
+        struct timespec start_time, end_time;
+        double diff;
+        
+        // --------------
+        // printf("\nStart sequential solver without precomputed rows.\n\n");
+
+        // clock_gettime(CLOCK_MONOTONIC, &start_time);
+
+        // solver(n, r, N_s, N, M, find_all, false, nr_s, parallel_execution);
+
+        // clock_gettime(CLOCK_MONOTONIC, &end_time);
+
+        // diff = get_time_diff(start_time, end_time);
+        // printf("This took %lf seconds.\n", diff);
+
+        // --------------
+        printf("\nStart sequential solver with precomputed rows.\n\n");
+
+        clock_gettime(CLOCK_MONOTONIC, &start_time);
+
+        solver(n, r, N_s, N, M, find_all, true, nr_s, parallel_execution);
+
+        clock_gettime(CLOCK_MONOTONIC, &end_time);
+
+        diff = get_time_diff(start_time, end_time);
+        printf("This took %lf seconds.\n", diff);
+    }
 
     return 0;
 }
