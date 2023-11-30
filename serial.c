@@ -185,7 +185,7 @@ void print_board(int r, int n, int (*b)[r][r]){
     printf("\n");
 }
 
-bool solver_depth_first(int r, int n, int N, int N_s, int M, int (*board)[r][r], bool *value_used, bool check_partial, bool find_all){
+bool solver_depth_first(int r, int n, int N, int N_s, int M, int (*board)[r][r], bool *value_used, bool check_partial, bool find_all, bool print_solutions, int *sol_cnt){
     int i, j, k, row_length;
     // Loop over each row
     for (i = 0; i < r; i++){
@@ -209,11 +209,11 @@ bool solver_depth_first(int r, int n, int N, int N_s, int M, int (*board)[r][r],
                 value_used[k] = true;
                 // If we selected to check partial solutions, we are now checking if the tile placement keeps the board valid
                 // If so we recurse
-                if (check_partial && validate_tile(r, board, M, n, a[j]) && solver_depth_first(r, n, N, N_s, M, board, value_used, check_partial, find_all)){
+                if (check_partial && validate_tile(r, board, M, n, a[j]) && solver_depth_first(r, n, N, N_s, M, board, value_used, check_partial, find_all, print_solutions, sol_cnt)){
                     return true;
                 }
                 // If no partial check selected, we just recurse and return true if it works out
-                else if (!check_partial && solver_depth_first(r, n, N, N_s, M, board, value_used, check_partial, find_all)){
+                else if (!check_partial && solver_depth_first(r, n, N, N_s, M, board, value_used, check_partial, find_all, print_solutions, sol_cnt)){
                     return true;
                 }
                 // else reset the tile and try the next available value
@@ -231,7 +231,9 @@ bool solver_depth_first(int r, int n, int N, int N_s, int M, int (*board)[r][r],
     // Evaluate the board and return the result or print the board if we try to find all solutions
     bool ret = validate_board(r, board, M, n);
     if (find_all && ret){
-        print_board(r, n, board);
+        if (print_solutions)
+            print_board(r, n, board);
+        (*sol_cnt)++;
         return false;
     }
     else{
@@ -322,7 +324,7 @@ double get_time_diff(struct timespec start, struct timespec end){
     return (end.tv_sec - start.tv_sec) + (double)(end.tv_nsec - start.tv_nsec) / (double)1000000000L;
 }
 
-bool solver(int n, int r, int N_s, int N, int M, bool find_all, bool use_precomputed_row, int nr_s, bool parallel_exec){
+int solver(int n, int r, int N_s, int N, int M, bool find_all, bool use_precomputed_row, int nr_s, bool parallel_exec, bool print_solutions){
     // The mutidimensional-array storing the current board, initialized with 0's
     // This representation is inspired by: https://www.redblobgames.com/grids/hexagons/
     int board[r][r][r];
@@ -334,6 +336,9 @@ bool solver(int n, int r, int N_s, int N, int M, bool find_all, bool use_precomp
 
     // A list which determines whether a value has already been set
     bool value_used[N];
+
+    // A counter which counts the number of found solutions
+    int sol_cnt = 0;
 
     if (use_precomputed_row){
         // If executed in parallel split the tasks
@@ -380,7 +385,7 @@ bool solver(int n, int r, int N_s, int N, int M, bool find_all, bool use_precomp
                 }
                 fill_board(vals_to_solve, r, n, board);
 
-                solver_depth_first(r, n, N, N_s, M, board, value_used, true, true);
+                solver_depth_first(r, n, N, N_s, M, board, value_used, true, true, print_solutions, &sol_cnt);
             }
         }
         else{
@@ -406,21 +411,21 @@ bool solver(int n, int r, int N_s, int N, int M, bool find_all, bool use_precomp
                 }
                 fill_board(vals_to_solve, r, n, board);
 
-                ret_solver = solver_depth_first(r, n, N, N_s, M, board, value_used, true, find_all);
+                ret_solver = solver_depth_first(r, n, N, N_s, M, board, value_used, true, find_all, print_solutions, &sol_cnt);
                 
                 if (!find_all && ret_solver){
                     printf("Solver found a solution!\nThis is the solution he found:\n");
                     print_board(r, n, board);
-                    return true;
+                    return 1;
                 }
             }
             if (!find_all){
                 printf("Solver was not able to find a solution for this board!\n");
-                return false;
+                return 0;
             }
         }
 
-        return true;
+        return sol_cnt;
     }
     else{
         // If executed in parallel split the tasks
@@ -442,29 +447,28 @@ bool solver(int n, int r, int N_s, int N, int M, bool find_all, bool use_precomp
                 value_used[i] = true;
                 fill_board(vals_to_solve, r, n, board);
 
-                solver_depth_first(r, n, N, N_s, M, board, value_used, true, true);
+                solver_depth_first(r, n, N, N_s, M, board, value_used, true, true, print_solutions, &sol_cnt);
             }
         }
         else{
             fill_board(vals_to_solve, r, n, board);
             fill_value_list(N, value_used);
 
-            bool ret_solver = solver_depth_first(r, n, N, N_s, M, board, value_used, true, find_all);
+            bool ret_solver = solver_depth_first(r, n, N, N_s, M, board, value_used, true, find_all, print_solutions, &sol_cnt);
 
             if (!find_all){
                 if (ret_solver){
                     printf("Solver found a solution!\nThis is the solution he found:\n");
                     print_board(r, n, board);
-                    return true;
+                    return 1;
                 }
                 else{
                     printf("Solver was not able to find a solution for this board!\n");
-                    return false;
+                    return 0;
                 }
             }
-
         }
-        return true;
+        return sol_cnt;
     }
 }
 
@@ -485,10 +489,14 @@ int main(int argc, char** argv) {
     int nr_s = 1000;
     // Whether to run the code in parallel
     bool parallel_execution = false;
+    // Do we use the precomputed starting rows?
+    bool use_starting_rows = true;
+    // Whether to print out the found solutions
+    bool print_solutions = false;
 
     // Read out command line arguments if supplied
     int opt;
-    while ((opt = getopt(argc, argv, "n:s::M:a:l::p::")) != -1){
+    while ((opt = getopt(argc, argv, "n:s::M:a:l::p::r::o::")) != -1){
         switch (opt){
             case 'n':
                 n = atoi(optarg);
@@ -511,6 +519,12 @@ int main(int argc, char** argv) {
             case 'p':
                 parallel_execution = atoi(optarg);
                 break;
+            case 'r':
+                use_starting_rows = atoi(optarg);
+                break;
+            case 'o':
+                print_solutions = atoi(optarg);
+                break;
             
             default:
                 printf("Command line argument could not be understood!\n");
@@ -523,52 +537,42 @@ int main(int argc, char** argv) {
         MPI_Init(NULL, NULL);
 
         // Get the number of processes
-        // int comm_sz;
-        // MPI_Comm_size(MPI_COMM_WORLD, &comm_sz);
+        int comm_sz;
+        MPI_Comm_size(MPI_COMM_WORLD, &comm_sz);
 
         // Get the rank of the process
         int my_rank;
         MPI_Comm_rank(MPI_COMM_WORLD, &my_rank);
 
-        double diff, max_diff, start_time, end_time;
-
-        // if (my_rank == 0){
-        //     printf("\nStart parallel solver without precomputed rows.\n\n");
-        // }
-
-        // start_time = MPI_Wtime();
-
-        // solver(n, r, N_s, N, M, find_all, false, nr_s, parallel_execution);
-
-        // end_time = MPI_Wtime();
-
-        // diff = end_time - start_time;
-
-        // MPI_Reduce(&diff, &max_diff, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
-
-        // if (my_rank == 0){
-        //     printf("This took %lf seconds.\n", max_diff);
-        // }
-
-
-        // --------------
+        double diff, max_diff, min_diff, sum_diff, start_time, end_time;
+        int local_sol_cnt, sol_cnt;
 
         if (my_rank == 0){
-            printf("\nStart parallel solver with precomputed rows.\n\n");
+            if (use_starting_rows)
+                printf("\nStart parallel solver with precomputed rows.\n\n");
+            else
+                printf("\nStart parallel solver without precomputed rows.\n\n");
         }
 
         start_time = MPI_Wtime();
 
-        solver(n, r, N_s, N, M, find_all, true, nr_s, parallel_execution);
+        local_sol_cnt = solver(n, r, N_s, N, M, true, use_starting_rows, nr_s, parallel_execution, print_solutions);
+        
+        // Add up number of found solutions
+        MPI_Reduce(&local_sol_cnt, &sol_cnt, 1, MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
 
         end_time = MPI_Wtime();
 
         diff = end_time - start_time;
 
         MPI_Reduce(&diff, &max_diff, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
+        MPI_Reduce(&diff, &min_diff, 1, MPI_DOUBLE, MPI_MIN, 0, MPI_COMM_WORLD);
+        MPI_Reduce(&diff, &sum_diff, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
 
         if (my_rank == 0){
+            printf("The solver found %d solutions.\n", sol_cnt);
             printf("This took %lf seconds.\n", max_diff);
+            printf("The shortest running process was %lf seconds long and on average a process took %lf seconds (total = %lf).", min_diff, sum_diff / comm_sz, sum_diff);
         }
 
 
@@ -578,27 +582,20 @@ int main(int argc, char** argv) {
     else{
         struct timespec start_time, end_time;
         double diff;
+        int sol_cnt;
         
-        // --------------
-        // printf("\nStart sequential solver without precomputed rows.\n\n");
-
-        // clock_gettime(CLOCK_MONOTONIC, &start_time);
-
-        // solver(n, r, N_s, N, M, find_all, false, nr_s, parallel_execution);
-
-        // clock_gettime(CLOCK_MONOTONIC, &end_time);
-
-        // diff = get_time_diff(start_time, end_time);
-        // printf("This took %lf seconds.\n", diff);
-
-        // --------------
-        printf("\nStart sequential solver with precomputed rows.\n\n");
+        if (use_starting_rows)
+            printf("\nStart sequential solver with precomputed rows.\n\n");
+        else
+            printf("\nStart sequential solver without precomputed rows.\n\n");
 
         clock_gettime(CLOCK_MONOTONIC, &start_time);
 
-        solver(n, r, N_s, N, M, find_all, true, nr_s, parallel_execution);
+        sol_cnt = solver(n, r, N_s, N, M, find_all, true, nr_s, parallel_execution, print_solutions);
 
         clock_gettime(CLOCK_MONOTONIC, &end_time);
+
+        printf("The solver found %d solutions.\n", sol_cnt);
 
         diff = get_time_diff(start_time, end_time);
         printf("This took %lf seconds.\n", diff);
