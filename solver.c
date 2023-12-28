@@ -162,6 +162,12 @@ int solver(int n, int r, int N_s, int N, int M, bool find_all, bool use_precompu
             MPI_Bcast(&cnt, 1, MPI_INT, 0, MPI_COMM_WORLD);
 
             // Calculate how many positions per process have to be calculated
+            if (cnt % comm_sz != 0){
+                if (my_rank == 0){
+                    printf("The number of processes (%d) has to be a divisor of the number of possible values (%d)!\n", comm_sz, cnt);
+                }
+                return 0;
+            }
             int share = (int)(cnt / comm_sz);
 
             // scatterv
@@ -169,6 +175,7 @@ int solver(int n, int r, int N_s, int N, int M, bool find_all, bool use_precompu
             MPI_Scatter(starting_row, share * n, MPI_INT, local_starting_row, share * n, MPI_INT, 0, MPI_COMM_WORLD);
 
             int j;
+            // openMP
             for (i = 0; i < share; i++){
                 fill_value_list(N, value_used);
                 for (j = 0; j < n; j++){
@@ -231,6 +238,12 @@ int solver(int n, int r, int N_s, int N, int M, bool find_all, bool use_precompu
             MPI_Comm_rank(MPI_COMM_WORLD, &my_rank);
 
             // Calculate how many positions per process have to be calculated
+            if (N % comm_sz != 0){
+                if (my_rank == 0){
+                    printf("The number of processes (%d) has to be a divisor of the number of possible values (%d)!\n", comm_sz, N);
+                }
+                return 0;
+            }
             int share = (int)(N / comm_sz);
 
             for (i = my_rank * share; i < (my_rank + 1) * share; i++){
@@ -267,9 +280,9 @@ int solver(int n, int r, int N_s, int N, int M, bool find_all, bool use_precompu
 int main(int argc, char** argv) {
     // Side length of the hexagon
     int n = 3; // 3, 4, 2
-    // Numbe of rows of the hexagon
+    // Number of rows of the hexagon
     int r = n*2-1;
-    // Number range of tiles to place
+    // Starting of number range of tiles to place
     int N_s = 1;
     // int N_e = 3*n*n-3*n+1;
     int N = 3*n*n-3*n+1;
@@ -277,7 +290,7 @@ int main(int argc, char** argv) {
     int M = 38;
     // Whether we want to find all solutions or only the first one
     bool find_all = false;
-    // Max number of starting positions of the first row we are looking
+    // Max number of starting positions of the first row we are looking at
     int nr_s = 1000;
     // Whether to run the code in parallel
     bool parallel_execution = false;
@@ -341,9 +354,10 @@ int main(int argc, char** argv) {
 
         if (my_rank == 0){
             if (use_starting_rows)
-                printf("\nStart parallel solver with precomputed rows.\n\n");
+                printf("\nStart parallel solver with precomputed rows. We are using %d processes.\n", comm_sz);
             else
-                printf("\nStart parallel solver without precomputed rows.\n\n");
+                printf("\nStart parallel solver without precomputed rows. We are using %d processes.\n", comm_sz);
+            printf("n = %d, s = %d, M = %d, a = %d, l = %d\n\n", n, N_s, M, find_all, nr_s);
         }
 
         start_time = MPI_Wtime();
@@ -363,7 +377,7 @@ int main(int argc, char** argv) {
 
         if (my_rank == 0){
             printf("The solver found %d solutions.\n", sol_cnt);
-            printf("This took %lf seconds.\n", max_diff);
+            printf("This took %lf seconds on %d processes.\n", max_diff, comm_sz);
             printf("The shortest running process was %lf seconds long and on average a process took %lf seconds (total = %lf).", min_diff, sum_diff / comm_sz, sum_diff);
         }
 
@@ -377,13 +391,14 @@ int main(int argc, char** argv) {
         int sol_cnt;
         
         if (use_starting_rows)
-            printf("\nStart sequential solver with precomputed rows.\n\n");
+            printf("\nStart sequential solver with precomputed rows.\n");
         else
-            printf("\nStart sequential solver without precomputed rows.\n\n");
+            printf("\nStart sequential solver without precomputed rows.\n");
+        printf("n = %d, s = %d, M = %d, a = %d, l = %d\n\n", n, N_s, M, find_all, nr_s);
 
         clock_gettime(CLOCK_MONOTONIC, &start_time);
 
-        sol_cnt = solver(n, r, N_s, N, M, find_all, true, nr_s, parallel_execution, print_solutions);
+        sol_cnt = solver(n, r, N_s, N, M, find_all, use_starting_rows, nr_s, parallel_execution, print_solutions);
 
         clock_gettime(CLOCK_MONOTONIC, &end_time);
 
