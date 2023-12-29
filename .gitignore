@@ -52,5 +52,5 @@ Mkfile.old
 dkms.conf
 
 # Custom
-outputs/
+outputs/archive/
 .vscode/

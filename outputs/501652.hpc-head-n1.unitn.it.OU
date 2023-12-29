@@ -1,0 +1,30 @@
+Name: hpc-c10-node01.unitn.it, Process: 1, CPU: 54
+Name: hpc-c10-node01.unitn.it, Process: 3, CPU: 50
+Name: hpc-c11-node07.unitn.it, Process: 5, CPU: 4
+Name: hpc-c11-node07.unitn.it, Process: 6, CPU: 6
+Name: hpc-c11-node07.unitn.it, Process: 7, CPU: 8
+Name: hpc-c11-node23.unitn.it, Process: 13, CPU: 22
+Name: hpc-c11-node23.unitn.it, Process: 14, CPU: 23
+Name: hpc-c11-node23.unitn.it, Process: 17, CPU: 6
+Processes for MPI 20
+Threading for OMP 2
+Name: hpc-c10-node01.unitn.it, Process: 0, CPU: 51
+Name: hpc-c11-node07.unitn.it, Process: 4, CPU: 3
+Name: hpc-c11-node23.unitn.it, Process: 18, CPU: 7
+Name: hpc-c10-node01.unitn.it, Process: 2, CPU: 6
+Name: hpc-c11-node23.unitn.it, Process: 16, CPU: 2
+Name: hpc-c11-node23.unitn.it, Process: 15, CPU: 5
+Name: hpc-c11-node22.unitn.it, Process: 19, CPU: 1
+Name: hpc-c11-node01.unitn.it, Process: 12, CPU: 38
+Name: hpc-c11-node01.unitn.it, Process: 9, CPU: 44
+Name: hpc-c11-node01.unitn.it, Process: 10, CPU: 26
+Name: hpc-c11-node01.unitn.it, Process: 11, CPU: 38
+Name: hpc-c11-node01.unitn.it, Process: 8, CPU: 40
+
+Start parallel solver with precomputed rows. We are using 20 processes.
+n = 3, s = 1, M = 38, a = 1, l = 1000
+
+Number of possible starting rows: 180
+The solver found 12 solutions.
+This took 3.741804 seconds on 20 processes.
+The shortest running process was 0.570532 seconds long and on average a process took 2.281833 seconds (total = 45.636659).
