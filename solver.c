@@ -2,13 +2,15 @@
 https://subscription.packtpub.com/book/programming/9781784394004/1/ch01lvl1sec08/aristotle-s-number-puzzle
 https://jtp.io/2017/01/12/aristotle-number-puzzle.html
 */
-
+#define _GNU_SOURCE
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
 #include <time.h>
 #include <unistd.h>
+#include <sched.h>
 #include <mpi.h>
+#include <omp.h>
 
 #include "helpers.h"
 
@@ -175,8 +177,16 @@ int solver(int n, int r, int N_s, int N, int M, bool find_all, bool use_precompu
             MPI_Scatter(starting_row, share * n, MPI_INT, local_starting_row, share * n, MPI_INT, 0, MPI_COMM_WORLD);
 
             int j;
-            // openMP
+            // int visited = 0;
+            #pragma omp parallel for default(none) private(j, value_used, board) firstprivate(vals_to_solve) shared(N, share, r, n, N_s, M, print_solutions, local_starting_row) reduction(+:sol_cnt)
+            // add schedule
             for (i = 0; i < share; i++){
+                // if (visited == 0){
+                //     printf("Thread %d of process %d on CPU %d\n", omp_get_thread_num(), my_rank, sched_getcpu());
+                //     print_board(r,n,board);
+                //     visited = 1;
+                // }
+
                 fill_value_list(N, value_used);
                 for (j = 0; j < n; j++){
                     vals_to_solve[j] = local_starting_row[i * n + j];
@@ -337,9 +347,18 @@ int main(int argc, char** argv) {
         }
     }
 
+
     if (parallel_execution){
         // Initialize the MPI environment
-        MPI_Init(NULL, NULL);
+        // MPI_Init(NULL, NULL);
+
+        int provided;
+        MPI_Init_thread(&argc, &argv, MPI_THREAD_FUNNELED, &provided);
+        if (provided!=MPI_THREAD_FUNNELED)
+        {
+            printf("Failed to initialize MPI_THREAD_FUNNELED\n");
+            exit(-1);
+        }
 
         // Get the number of processes
         int comm_sz;
@@ -348,6 +367,20 @@ int main(int argc, char** argv) {
         // Get the rank of the process
         int my_rank;
         MPI_Comm_rank(MPI_COMM_WORLD, &my_rank);
+
+        int threads = omp_get_max_threads();
+        if(my_rank==0){
+            printf("Processes for MPI %d\n",comm_sz);
+            printf("Threading for OMP %d\n",threads);
+        }
+
+        int cpu_num = sched_getcpu();
+        char proc_name[100];
+        int name_len = 0;
+        MPI_Get_processor_name(proc_name, &name_len);
+        printf("Name: %s, Process: %d, CPU: %d\n",proc_name, my_rank, cpu_num);
+
+        MPI_Barrier(MPI_COMM_WORLD);
 
         double diff, max_diff, min_diff, sum_diff, start_time, end_time;
         int local_sol_cnt, sol_cnt;

@@ -1,4 +1,4 @@
 # magic-hexagon
 
 
-mpicc -g -Wall -o solver.o solver.c helpers.c
+mpicc -g -Wall -fopenmp -o solver.o solver.c helpers.c
