@@ -10,7 +10,9 @@ https://jtp.io/2017/01/12/aristotle-number-puzzle.html
 #include <unistd.h>
 #include <sched.h>
 #include <mpi.h>
-#include <omp.h>
+#ifdef _OPENMP
+    #include <omp.h>
+#endif
 
 #include "helpers.h"
 
@@ -118,7 +120,7 @@ bool generate_starting_row(int n, int N, int N_s, int M, int nr_s, int (*startin
     return true;
 }
 
-int solver(int n, int r, int N_s, int N, int M, bool find_all, bool use_precomputed_row, int nr_s, bool parallel_exec, bool print_solutions){
+int solver(int n, int r, int N_s, int N, int M, bool find_all, bool use_precomputed_row, int nr_s, bool parallel_exec, bool print_solutions, int verbosity){
     // The mutidimensional-array storing the current board, initialized with 0's
     // This representation is inspired by: https://www.redblobgames.com/grids/hexagons/
     int board[r][r][r];
@@ -177,15 +179,25 @@ int solver(int n, int r, int N_s, int N, int M, bool find_all, bool use_precompu
             MPI_Scatter(starting_row, share * n, MPI_INT, local_starting_row, share * n, MPI_INT, 0, MPI_COMM_WORLD);
 
             int j;
-            // int visited = 0;
-            #pragma omp parallel for default(none) private(j, value_used, board) firstprivate(vals_to_solve) shared(N, share, r, n, N_s, M, print_solutions, local_starting_row) reduction(+:sol_cnt)
+            int visited = 0;
+            #ifdef _OPENMP
+                #pragma omp parallel for default(none) private(j, value_used, board) firstprivate(vals_to_solve, visited) shared(N, share, r, n, N_s, M, print_solutions, local_starting_row, my_rank, verbosity) reduction(+:sol_cnt)
+            #endif
             // add schedule
             for (i = 0; i < share; i++){
-                // if (visited == 0){
-                //     printf("Thread %d of process %d on CPU %d\n", omp_get_thread_num(), my_rank, sched_getcpu());
-                //     print_board(r,n,board);
-                //     visited = 1;
-                // }
+                if (verbosity > 1 && visited == 0){
+                    #ifdef _OPENMP
+                        #pragma omp critical
+                        {
+                            printf("Thread %d of process %d on CPU %d\n", omp_get_thread_num(), my_rank, sched_getcpu());
+                            if (verbosity > 2)
+                                print_board(r,n,board);
+                        }
+                    #else
+                        printf("Process %d on CPU %d\n", my_rank, sched_getcpu());
+                    #endif
+                    visited = 1;
+                }
 
                 fill_value_list(N, value_used);
                 for (j = 0; j < n; j++){
@@ -308,10 +320,12 @@ int main(int argc, char** argv) {
     bool use_starting_rows = true;
     // Whether to print out the found solutions
     bool print_solutions = false;
+    // Verbosity level
+    int verbosity = 0;
 
     // Read out command line arguments if supplied
     int opt;
-    while ((opt = getopt(argc, argv, "n:s::M:a:l::p::r::o::")) != -1){
+    while ((opt = getopt(argc, argv, "n:s::M:a:l::p::r::o::v::")) != -1){
         switch (opt){
             case 'n':
                 n = atoi(optarg);
@@ -340,6 +354,9 @@ int main(int argc, char** argv) {
             case 'o':
                 print_solutions = atoi(optarg);
                 break;
+            case 'v':
+                verbosity = atoi(optarg);
+                break;
             
             default:
                 printf("Command line argument could not be understood!\n");
@@ -349,16 +366,25 @@ int main(int argc, char** argv) {
 
 
     if (parallel_execution){
-        // Initialize the MPI environment
-        // MPI_Init(NULL, NULL);
+        // Get the number of openMP threads
+        #ifdef _OPENMP
+            int threads = omp_get_max_threads();
+        #else
+            int threads = 1;
+        #endif
 
-        int provided;
-        MPI_Init_thread(&argc, &argv, MPI_THREAD_FUNNELED, &provided);
-        if (provided!=MPI_THREAD_FUNNELED)
-        {
-            printf("Failed to initialize MPI_THREAD_FUNNELED\n");
-            exit(-1);
+        // Initialize the MPI environment
+        if (threads > 1){
+            int provided;
+            MPI_Init_thread(&argc, &argv, MPI_THREAD_FUNNELED, &provided);
+            if (provided != MPI_THREAD_FUNNELED)
+            {
+                printf("Failed to initialize MPI_THREAD_FUNNELED\n");
+                exit(-1);
+            }
         }
+        else
+            MPI_Init(&argc, &argv);
 
         // Get the number of processes
         int comm_sz;
@@ -368,34 +394,30 @@ int main(int argc, char** argv) {
         int my_rank;
         MPI_Comm_rank(MPI_COMM_WORLD, &my_rank);
 
-        int threads = omp_get_max_threads();
-        if(my_rank==0){
-            printf("Processes for MPI %d\n",comm_sz);
-            printf("Threading for OMP %d\n",threads);
+        if (verbosity > 0){
+            int cpu_num = sched_getcpu();
+            char proc_name[100];
+            int name_len = 0;
+            MPI_Get_processor_name(proc_name, &name_len);
+            printf("Name: %s, Process: %d, CPU: %d\n",proc_name, my_rank, cpu_num);
+
+            MPI_Barrier(MPI_COMM_WORLD);
         }
-
-        int cpu_num = sched_getcpu();
-        char proc_name[100];
-        int name_len = 0;
-        MPI_Get_processor_name(proc_name, &name_len);
-        printf("Name: %s, Process: %d, CPU: %d\n",proc_name, my_rank, cpu_num);
-
-        MPI_Barrier(MPI_COMM_WORLD);
 
         double diff, max_diff, min_diff, sum_diff, start_time, end_time;
         int local_sol_cnt, sol_cnt;
 
         if (my_rank == 0){
             if (use_starting_rows)
-                printf("\nStart parallel solver with precomputed rows. We are using %d processes.\n", comm_sz);
+                printf("\nStart parallel solver with precomputed rows. We are using %d processes on %d threads.\n", comm_sz, threads);
             else
-                printf("\nStart parallel solver without precomputed rows. We are using %d processes.\n", comm_sz);
+                printf("\nStart parallel solver without precomputed rows. We are using %d processes on %d threads.\n", comm_sz, threads);
             printf("n = %d, s = %d, M = %d, a = %d, l = %d\n\n", n, N_s, M, find_all, nr_s);
         }
 
         start_time = MPI_Wtime();
 
-        local_sol_cnt = solver(n, r, N_s, N, M, true, use_starting_rows, nr_s, parallel_execution, print_solutions);
+        local_sol_cnt = solver(n, r, N_s, N, M, true, use_starting_rows, nr_s, parallel_execution, print_solutions, verbosity);
         
         // Add up number of found solutions
         MPI_Reduce(&local_sol_cnt, &sol_cnt, 1, MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
@@ -431,7 +453,7 @@ int main(int argc, char** argv) {
 
         clock_gettime(CLOCK_MONOTONIC, &start_time);
 
-        sol_cnt = solver(n, r, N_s, N, M, find_all, use_starting_rows, nr_s, parallel_execution, print_solutions);
+        sol_cnt = solver(n, r, N_s, N, M, find_all, use_starting_rows, nr_s, parallel_execution, print_solutions, verbosity);
 
         clock_gettime(CLOCK_MONOTONIC, &end_time);
 
