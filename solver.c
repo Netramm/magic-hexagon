@@ -72,17 +72,18 @@ bool solver_depth_first(int r, int n, int N, int N_s, int M, int (*board)[r][r],
     }
 }
 
-bool generate_starting_row(int n, int N, int N_s, int M, int nr_s, int (*starting_row_list), int *prev_nrs, int ind, int *cnt){
+bool generate_starting_row(int row_length, int N, int N_s, int M, int nr_s, int (*starting_row_list), int *prev_nrs, int ind, int *cnt){
+    /* This function generates all possible starting rows for the solver. It is used to parallelize the solver. The geneartion is done by looking at all possible combinations of distinct numbers for the selected row that add up to M.
+    */
     int i, j;
     bool duplicated = false;
     int start_index = 0;
 
-    if (ind < n){
-        // TODO, has to be checked more general!!!!!!!!!!!!!!!!!!!!!!!
-        // if (ind > (int)(n-1) / 2){
-        //     start_index = prev_nrs[n - ind - 1] + 1;
-        // }
+    // Run over each position in the starting row
+    if (ind < row_length){
+        // Loop over all possible numbers
         for (i = start_index; i < N; i++){
+            // Check if the number has already been used
             duplicated = false;
             for (j = 0; j < ind; j++){
                 if (prev_nrs[j] == i){
@@ -92,25 +93,30 @@ bool generate_starting_row(int n, int N, int N_s, int M, int nr_s, int (*startin
             }
             if (duplicated)
                 continue;
+            // Set this number as new one and recurse until all numbers in the row are set
             prev_nrs[ind] = i;
-            if (ind < n-1){
-                if (!generate_starting_row(n, N, N_s, M, nr_s, starting_row_list, prev_nrs, ind + 1, cnt)){
+            if (ind < row_length-1){
+                if (!generate_starting_row(row_length, N, N_s, M, nr_s, starting_row_list, prev_nrs, ind + 1, cnt)){
                     return false;
                 }
             }
+            // If all numbers are set, check if the row is valid, meaning if it sums up to M
             else{
                 int sum = 0;
                 int k;
-                for (k = 0; k < n; k++){
+                for (k = 0; k < row_length; k++){
                     sum += prev_nrs[k] + N_s;
                 }
+                // If not valid, try the next number
                 if (sum != M){
                     continue;
                 }
-                for (k = 0; k < n; k++){
-                    starting_row_list[(*cnt) * n + k] = prev_nrs[k] + N_s;
+                // If valid, add it to the list of starting rows
+                for (k = 0; k < row_length; k++){
+                    starting_row_list[(*cnt) * row_length + k] = prev_nrs[k] + N_s;
                 }
                 (*cnt)++;
+                // Only generate a limited number of starting rows
                 if (*cnt == nr_s)
                     return false;
             }
@@ -120,7 +126,7 @@ bool generate_starting_row(int n, int N, int N_s, int M, int nr_s, int (*startin
     return true;
 }
 
-int solver(int n, int r, int N_s, int N, int M, bool find_all, bool use_precomputed_row, int nr_s, bool parallel_exec, bool print_solutions, int verbosity){
+int solver(int n, int r, int N_s, int N, int M, bool find_all, int precomputed_row, int nr_s, bool parallel_exec, bool print_solutions, int verbosity){
     // The mutidimensional-array storing the current board, initialized with 0's
     // This representation is inspired by: https://www.redblobgames.com/grids/hexagons/
     int board[r][r][r];
@@ -136,7 +142,7 @@ int solver(int n, int r, int N_s, int N, int M, bool find_all, bool use_precompu
     // A counter which counts the number of found solutions
     int sol_cnt = 0;
 
-    if (use_precomputed_row){
+    if (precomputed_row >= 0){
         // If executed in parallel split the tasks
         if (parallel_exec){
             // Get the number of processes
@@ -148,13 +154,14 @@ int solver(int n, int r, int N_s, int N, int M, bool find_all, bool use_precompu
             MPI_Comm_rank(MPI_COMM_WORLD, &my_rank);
 
             // Calculate possible starting rows on the first process
-            int starting_row[nr_s * n];
+            int row_length = n + precomputed_row;
+            int starting_row[nr_s * row_length];
             int cnt;
             if (my_rank == 0){
-                int prev_nrs[n];
+                int prev_nrs[row_length];
                 cnt = 0;
 
-                bool ret_generator = generate_starting_row(n, N, N_s, M, nr_s, starting_row, prev_nrs, 0, &cnt);
+                bool ret_generator = generate_starting_row(row_length, N, N_s, M, nr_s, starting_row, prev_nrs, 0, &cnt);
 
                 if (!ret_generator){
                     printf("The number of possible starting rows exceeds the number selected!\nChoose a larger number to generate all starting rows.\n");
@@ -175,13 +182,20 @@ int solver(int n, int r, int N_s, int N, int M, bool find_all, bool use_precompu
             int share = (int)(cnt / comm_sz);
 
             // scatterv
-            int local_starting_row[share * n];
-            MPI_Scatter(starting_row, share * n, MPI_INT, local_starting_row, share * n, MPI_INT, 0, MPI_COMM_WORLD);
+            int local_starting_row[share * row_length];
+            MPI_Scatter(starting_row, share * row_length, MPI_INT, local_starting_row, share * row_length, MPI_INT, 0, MPI_COMM_WORLD);
 
-            int j;
+            int j, k;
             int visited = 0;
+            bool ret_solver;
+            int start_index = 0;
+            for (k = 0; k < precomputed_row; k++){
+                start_index += n;
+                start_index += k;
+            }
+
             #ifdef _OPENMP
-                #pragma omp parallel for default(none) private(j, value_used, board) firstprivate(vals_to_solve, visited) shared(N, share, r, n, N_s, M, print_solutions, local_starting_row, my_rank, verbosity) reduction(+:sol_cnt)
+                #pragma omp parallel for default(none) private(j, value_used, board, ret_solver) firstprivate(vals_to_solve, visited) shared(N, share, r, n, row_length, N_s, M, print_solutions, local_starting_row, my_rank, verbosity, find_all, start_index) reduction(+:sol_cnt)
             #endif
             // add schedule
             for (i = 0; i < share; i++){
@@ -200,21 +214,30 @@ int solver(int n, int r, int N_s, int N, int M, bool find_all, bool use_precompu
                 }
 
                 fill_value_list(N, value_used);
-                for (j = 0; j < n; j++){
-                    vals_to_solve[j] = local_starting_row[i * n + j];
-                    value_used[local_starting_row[i * n + j] - N_s] = true;
+                for (j = 0; j < row_length; j++){
+                    vals_to_solve[start_index + j] = local_starting_row[i * row_length + j];
+                    value_used[local_starting_row[i * row_length + j] - N_s] = true;
                 }
                 fill_board(vals_to_solve, r, n, board);
 
-                solver_depth_first(r, n, N, N_s, M, board, value_used, true, true, print_solutions, &sol_cnt);
+                ret_solver = solver_depth_first(r, n, N, N_s, M, board, value_used, true, find_all, print_solutions, &sol_cnt);
+
+                if (!find_all){
+                    if (ret_solver){
+                        printf("Solver found a solution!\nThis is the solution he found:\n");
+                        print_board(r, n, board);
+                        MPI_Abort(MPI_COMM_WORLD, 1);
+                    }
+                }
             }
         }
         else{
-            int starting_row[nr_s * n];
-            int prev_nrs[n];
+            int row_length = n + precomputed_row;
+            int starting_row[nr_s * row_length];
+            int prev_nrs[row_length];
             int cnt = 0;
 
-            bool ret_generator = generate_starting_row(n, N, N_s, M, nr_s, starting_row, prev_nrs, 0, &cnt);
+            bool ret_generator = generate_starting_row(row_length, N, N_s, M, nr_s, starting_row, prev_nrs, 0, &cnt);
 
             if (!ret_generator){
                 printf("The number of possible starting rows exceeds the number selected!\nChoose a larger number to generate all starting rows.\n");
@@ -222,13 +245,18 @@ int solver(int n, int r, int N_s, int N, int M, bool find_all, bool use_precompu
             
             printf("Number of possible starting rows: %d\n", cnt);
 
-            int j;
+            int j, k;
             bool ret_solver;
+            int start_index = 0;
+            for (k = 0; k < precomputed_row; k++){
+                start_index += n;
+                start_index += k;
+            }
             for (i = 0; i < cnt; i++){
                 fill_value_list(N, value_used);
-                for (j = 0; j < n; j++){
-                    vals_to_solve[j] = starting_row[i * n + j];
-                    value_used[starting_row[i * n + j] - N_s] = true;
+                for (j = 0; j < row_length; j++){
+                    vals_to_solve[start_index + j] = starting_row[i * row_length + j];
+                    value_used[starting_row[i * row_length + j] - N_s] = true;
                 }
                 fill_board(vals_to_solve, r, n, board);
 
@@ -267,6 +295,7 @@ int solver(int n, int r, int N_s, int N, int M, bool find_all, bool use_precompu
                 return 0;
             }
             int share = (int)(N / comm_sz);
+            bool ret_solver;
 
             for (i = my_rank * share; i < (my_rank + 1) * share; i++){
                 fill_value_list(N, value_used);
@@ -274,7 +303,16 @@ int solver(int n, int r, int N_s, int N, int M, bool find_all, bool use_precompu
                 value_used[i] = true;
                 fill_board(vals_to_solve, r, n, board);
 
-                solver_depth_first(r, n, N, N_s, M, board, value_used, true, true, print_solutions, &sol_cnt);
+                ret_solver = solver_depth_first(r, n, N, N_s, M, board, value_used, true, find_all, print_solutions, &sol_cnt);
+
+                if (!find_all){
+                    if (ret_solver){
+                        printf("Solver found a solution!\nThis is the solution he found:\n");
+                        print_board(r, n, board);
+                        MPI_Abort(MPI_COMM_WORLD, 1);
+                        return 1;
+                    }
+                }
             }
         }
         else{
@@ -316,8 +354,8 @@ int main(int argc, char** argv) {
     int nr_s = 1000;
     // Whether to run the code in parallel
     bool parallel_execution = false;
-    // Do we use the precomputed starting rows?
-    bool use_starting_rows = true;
+    // Which row do we precalculate (only choose from the first half), if none then set to -1
+    int starting_rows_calc = 0;
     // Whether to print out the found solutions
     bool print_solutions = false;
     // Verbosity level
@@ -349,7 +387,7 @@ int main(int argc, char** argv) {
                 parallel_execution = atoi(optarg);
                 break;
             case 'r':
-                use_starting_rows = atoi(optarg);
+                starting_rows_calc = atoi(optarg);
                 break;
             case 'o':
                 print_solutions = atoi(optarg);
@@ -408,7 +446,7 @@ int main(int argc, char** argv) {
         int local_sol_cnt, sol_cnt;
 
         if (my_rank == 0){
-            if (use_starting_rows)
+            if (starting_rows_calc >= 0)
                 printf("\nStart parallel solver with precomputed rows. We are using %d processes on %d threads.\n", comm_sz, threads);
             else
                 printf("\nStart parallel solver without precomputed rows. We are using %d processes on %d threads.\n", comm_sz, threads);
@@ -417,7 +455,7 @@ int main(int argc, char** argv) {
 
         start_time = MPI_Wtime();
 
-        local_sol_cnt = solver(n, r, N_s, N, M, true, use_starting_rows, nr_s, parallel_execution, print_solutions, verbosity);
+        local_sol_cnt = solver(n, r, N_s, N, M, find_all, starting_rows_calc, nr_s, parallel_execution, print_solutions, verbosity);
         
         // Add up number of found solutions
         MPI_Reduce(&local_sol_cnt, &sol_cnt, 1, MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
@@ -445,7 +483,7 @@ int main(int argc, char** argv) {
         double diff;
         int sol_cnt;
         
-        if (use_starting_rows)
+        if (starting_rows_calc >= 0)
             printf("\nStart sequential solver with precomputed rows.\n");
         else
             printf("\nStart sequential solver without precomputed rows.\n");
@@ -453,7 +491,7 @@ int main(int argc, char** argv) {
 
         clock_gettime(CLOCK_MONOTONIC, &start_time);
 
-        sol_cnt = solver(n, r, N_s, N, M, find_all, use_starting_rows, nr_s, parallel_execution, print_solutions, verbosity);
+        sol_cnt = solver(n, r, N_s, N, M, find_all, starting_rows_calc, nr_s, parallel_execution, print_solutions, verbosity);
 
         clock_gettime(CLOCK_MONOTONIC, &end_time);
 
