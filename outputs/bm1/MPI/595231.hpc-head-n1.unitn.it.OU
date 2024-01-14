@@ -1,0 +1,7 @@
+scatter 20
+Start parallel solver without precomputed rows. We are using 19 processes on 1 threads.
+n = 3, s = 1, M = 38, a = 1, l = 200
+
+The solver found 12 solutions.
+This took 19.469112 seconds on 19 processes.
+The shortest running process was 0.020264 seconds long and on average a process took 7.632252 seconds (total = 145.012782).

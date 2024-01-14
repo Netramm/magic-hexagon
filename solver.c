@@ -126,7 +126,7 @@ bool generate_starting_row(int row_length, int N, int N_s, int M, int nr_s, int 
     return true;
 }
 
-int solver(int n, int r, int N_s, int N, int M, bool find_all, int precomputed_row, int nr_s, bool parallel_exec, bool print_solutions, int verbosity){
+int solver(int n, int r, int N_s, int N, int M, bool find_all, int precomputed_row, int nr_s, bool parallel_exec, bool check_partial, bool print_solutions, int verbosity, int benchmark){
     // The mutidimensional-array storing the current board, initialized with 0's
     // This representation is inspired by: https://www.redblobgames.com/grids/hexagons/
     int board[r][r][r];
@@ -173,7 +173,7 @@ int solver(int n, int r, int N_s, int N, int M, bool find_all, int precomputed_r
             MPI_Bcast(&cnt, 1, MPI_INT, 0, MPI_COMM_WORLD);
 
             // Calculate how many positions per process have to be calculated
-            if (cnt % comm_sz != 0){
+            if (benchmark != 2 && cnt % comm_sz != 0){
                 if (my_rank == 0){
                     printf("The number of processes (%d) has to be a divisor of the number of possible values (%d)!\n", comm_sz, cnt);
                 }
@@ -194,11 +194,13 @@ int solver(int n, int r, int N_s, int N, int M, bool find_all, int precomputed_r
                 start_index += k;
             }
 
+            // Only use OpenMP if we can access the API
             #ifdef _OPENMP
-                #pragma omp parallel for default(none) private(j, value_used, board, ret_solver) firstprivate(vals_to_solve, visited) shared(N, share, r, n, row_length, N_s, M, print_solutions, local_starting_row, my_rank, verbosity, find_all, start_index) reduction(+:sol_cnt)
+                #pragma omp parallel for default(none) private(j, value_used, board, ret_solver) firstprivate(vals_to_solve, visited) shared(N, share, r, n, row_length, N_s, M, print_solutions, local_starting_row, my_rank, verbosity, find_all, start_index, check_partial) reduction(+:sol_cnt)
             #endif
-            // add schedule
+            // Loop over the assigned precomputed combinations of this process
             for (i = 0; i < share; i++){
+                // Print out the process and the CPU it is running on as well as the thread if OpenMP is used
                 if (verbosity > 1 && visited == 0){
                     #ifdef _OPENMP
                         #pragma omp critical
@@ -213,6 +215,7 @@ int solver(int n, int r, int N_s, int N, int M, bool find_all, int precomputed_r
                     visited = 1;
                 }
 
+                // Fill the board with the values of the precomputed combination
                 fill_value_list(N, value_used);
                 for (j = 0; j < row_length; j++){
                     vals_to_solve[start_index + j] = local_starting_row[i * row_length + j];
@@ -220,8 +223,10 @@ int solver(int n, int r, int N_s, int N, int M, bool find_all, int precomputed_r
                 }
                 fill_board(vals_to_solve, r, n, board);
 
-                ret_solver = solver_depth_first(r, n, N, N_s, M, board, value_used, true, find_all, print_solutions, &sol_cnt);
+                // Call the solver
+                ret_solver = solver_depth_first(r, n, N, N_s, M, board, value_used, check_partial, find_all, print_solutions, &sol_cnt);
 
+                // If we only want to find the first solution, we can abort the program if we found one
                 if (!find_all){
                     if (ret_solver){
                         printf("Solver found a solution!\nThis is the solution he found:\n");
@@ -260,7 +265,7 @@ int solver(int n, int r, int N_s, int N, int M, bool find_all, int precomputed_r
                 }
                 fill_board(vals_to_solve, r, n, board);
 
-                ret_solver = solver_depth_first(r, n, N, N_s, M, board, value_used, true, find_all, print_solutions, &sol_cnt);
+                ret_solver = solver_depth_first(r, n, N, N_s, M, board, value_used, check_partial, find_all, print_solutions, &sol_cnt);
                 
                 if (!find_all && ret_solver){
                     printf("Solver found a solution!\nThis is the solution he found:\n");
@@ -288,7 +293,7 @@ int solver(int n, int r, int N_s, int N, int M, bool find_all, int precomputed_r
             MPI_Comm_rank(MPI_COMM_WORLD, &my_rank);
 
             // Calculate how many positions per process have to be calculated
-            if (N % comm_sz != 0){
+            if (benchmark != 2 && N % comm_sz != 0){
                 if (my_rank == 0){
                     printf("The number of processes (%d) has to be a divisor of the number of possible values (%d)!\n", comm_sz, N);
                 }
@@ -303,7 +308,7 @@ int solver(int n, int r, int N_s, int N, int M, bool find_all, int precomputed_r
                 value_used[i] = true;
                 fill_board(vals_to_solve, r, n, board);
 
-                ret_solver = solver_depth_first(r, n, N, N_s, M, board, value_used, true, find_all, print_solutions, &sol_cnt);
+                ret_solver = solver_depth_first(r, n, N, N_s, M, board, value_used, check_partial, find_all, print_solutions, &sol_cnt);
 
                 if (!find_all){
                     if (ret_solver){
@@ -319,7 +324,7 @@ int solver(int n, int r, int N_s, int N, int M, bool find_all, int precomputed_r
             fill_board(vals_to_solve, r, n, board);
             fill_value_list(N, value_used);
 
-            bool ret_solver = solver_depth_first(r, n, N, N_s, M, board, value_used, true, find_all, print_solutions, &sol_cnt);
+            bool ret_solver = solver_depth_first(r, n, N, N_s, M, board, value_used, check_partial, find_all, print_solutions, &sol_cnt);
 
             if (!find_all){
                 if (ret_solver){
@@ -354,16 +359,20 @@ int main(int argc, char** argv) {
     int nr_s = 1000;
     // Whether to run the code in parallel
     bool parallel_execution = false;
+    // Whether to check for partial validity
+    bool check_partial = true;
     // Which row do we precalculate (only choose from the first half), if none then set to -1
     int starting_rows_calc = 0;
     // Whether to print out the found solutions
     bool print_solutions = false;
     // Verbosity level
     int verbosity = 0;
+    // Select the benchmar we are running
+    int benchmark = 1;
 
     // Read out command line arguments if supplied
     int opt;
-    while ((opt = getopt(argc, argv, "n:s::M:a:l::p::r::o::v::")) != -1){
+    while ((opt = getopt(argc, argv, "n:s::M:a:l::p::r::o::v::c::b::")) != -1){
         switch (opt){
             case 'n':
                 n = atoi(optarg);
@@ -394,6 +403,12 @@ int main(int argc, char** argv) {
                 break;
             case 'v':
                 verbosity = atoi(optarg);
+                break;
+            case 'c':
+                check_partial = atoi(optarg);
+                break;
+            case 'b':
+                benchmark = atoi(optarg);
                 break;
             
             default:
@@ -443,7 +458,7 @@ int main(int argc, char** argv) {
         }
 
         double diff, max_diff, min_diff, sum_diff, start_time, end_time;
-        int local_sol_cnt, sol_cnt;
+        int local_sol_cnt, sol_cnt, i;
 
         if (my_rank == 0){
             if (starting_rows_calc >= 0)
@@ -453,12 +468,29 @@ int main(int argc, char** argv) {
             printf("n = %d, s = %d, M = %d, a = %d, l = %d\n\n", n, N_s, M, find_all, nr_s);
         }
 
+        MPI_Barrier(MPI_COMM_WORLD);
         start_time = MPI_Wtime();
 
-        local_sol_cnt = solver(n, r, N_s, N, M, find_all, starting_rows_calc, nr_s, parallel_execution, print_solutions, verbosity);
-        
-        // Add up number of found solutions
-        MPI_Reduce(&local_sol_cnt, &sol_cnt, 1, MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
+        if (benchmark == 1 || benchmark == 3){
+            local_sol_cnt = solver(n, r, N_s, N, M, find_all, starting_rows_calc, nr_s, parallel_execution, check_partial, print_solutions, verbosity, benchmark);
+     
+            // Add up number of found solutions
+            MPI_Reduce(&local_sol_cnt, &sol_cnt, 1, MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
+        }
+        else if (benchmark == 2){
+            for (i = 19; i <= 54; i++){
+                local_sol_cnt = solver(n, r, N_s, N, i, find_all, starting_rows_calc, nr_s, parallel_execution, check_partial, print_solutions, verbosity, benchmark);
+
+                // Add up number of found solutions
+                MPI_Reduce(&local_sol_cnt, &sol_cnt, 1, MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
+                if (my_rank == 0)
+                    printf("M = %d, sol_cnt = %d\n", i, sol_cnt);
+            }
+        }
+        else{
+            printf("Please select a valid benchmark!\n");
+            exit(0);
+        }
 
         end_time = MPI_Wtime();
 
@@ -469,7 +501,9 @@ int main(int argc, char** argv) {
         MPI_Reduce(&diff, &sum_diff, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
 
         if (my_rank == 0){
-            printf("The solver found %d solutions.\n", sol_cnt);
+            if (benchmark != 2){
+                printf("The solver found %d solutions.\n", sol_cnt);
+            }
             printf("This took %lf seconds on %d processes.\n", max_diff, comm_sz);
             printf("The shortest running process was %lf seconds long and on average a process took %lf seconds (total = %lf).", min_diff, sum_diff / comm_sz, sum_diff);
         }
@@ -481,7 +515,7 @@ int main(int argc, char** argv) {
     else{
         struct timespec start_time, end_time;
         double diff;
-        int sol_cnt;
+        int sol_cnt, i;
         
         if (starting_rows_calc >= 0)
             printf("\nStart sequential solver with precomputed rows.\n");
@@ -491,7 +525,20 @@ int main(int argc, char** argv) {
 
         clock_gettime(CLOCK_MONOTONIC, &start_time);
 
-        sol_cnt = solver(n, r, N_s, N, M, find_all, starting_rows_calc, nr_s, parallel_execution, print_solutions, verbosity);
+        if (benchmark == 1 || benchmark == 3){
+            sol_cnt = solver(n, r, N_s, N, M, find_all, starting_rows_calc, nr_s, parallel_execution, check_partial, print_solutions, verbosity, benchmark);
+        }
+        else if (benchmark == 2){
+            for (i = 19; i <= 54; i++){
+                sol_cnt = solver(n, r, N_s, N, i, find_all, starting_rows_calc, nr_s, parallel_execution, check_partial, print_solutions, verbosity, benchmark);
+
+                printf("M = %d, sol_cnt = %d\n", i, sol_cnt);
+            }
+        }
+        else{
+            printf("Please select a valid benchmark!\n");
+            exit(0);
+        }
 
         clock_gettime(CLOCK_MONOTONIC, &end_time);
 

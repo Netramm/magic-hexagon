@@ -1,0 +1,8 @@
+pack:excl
+Start parallel solver with precomputed rows. We are using 90 processes on 1 threads.
+n = 3, s = 1, M = 38, a = 1, l = 200
+
+Number of possible starting rows: 180
+The solver found 12 solutions.
+This took 1.221388 seconds on 90 processes.
+The shortest running process was 0.021858 seconds long and on average a process took 0.797177 seconds (total = 71.745962).

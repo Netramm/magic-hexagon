@@ -1,0 +1,6 @@
+With partial check
+Start sequential solver without precomputed rows.
+n = 3, s = 1, M = 38, a = 1, l = 200
+
+The solver found 12 solutions.
+This took 70.035894 seconds.
