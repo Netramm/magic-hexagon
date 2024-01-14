@@ -1,3 +1,6 @@
+/*Here you can find some helper functions required for the solver implementation.
+*/
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
@@ -188,5 +191,7 @@ bool validate_tile(int r, int (*board)[r][r], int M, int n, int *tile_placed){
 }
 
 double get_time_diff(struct timespec start, struct timespec end){
+    /* This function calculates the time difference in seconds between two timespec structs.
+    */
     return (end.tv_sec - start.tv_sec) + (double)(end.tv_nsec - start.tv_nsec) / (double)1000000000L;
 }
